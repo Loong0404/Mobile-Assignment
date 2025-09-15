@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'frontend/home.dart';
 import 'frontend/profile.dart'; // 内含 LoginPage / RegisterPage / ProfilePage
 import 'backend/profile.dart'; // ⬅️ 为了读取 currentUser
+import 'frontend/billing.dart';
+import 'frontend/feedback.dart';
 
 class AppRouter {
   static const login = '/login';
@@ -19,7 +21,8 @@ class AppRouter {
     login: (ctx) => const LoginPage(), // 可被带参复用（见下方 /profile）
     register: (ctx) => const RegisterPage(),
     home: (ctx) => const HomePage(),
-
+    billing: (ctx) => const BillingListPage(),
+    feedback: (_) => const FeedbackListPage(),
     // ⬇️ 关键：访问 /profile 时做「登录守卫」
     profile: (ctx) {
       final signedIn = ProfileBackend.instance.currentUser != null;
