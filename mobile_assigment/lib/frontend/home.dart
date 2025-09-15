@@ -12,7 +12,6 @@ class HomePage extends StatelessWidget {
       ('Tracking', AppRouter.tracking),
       ('Billing', AppRouter.billing),
       ('Feedback', AppRouter.feedback),
-      ('Notices', AppRouter.notices),
       ('Profile', AppRouter.profile),
     ];
 

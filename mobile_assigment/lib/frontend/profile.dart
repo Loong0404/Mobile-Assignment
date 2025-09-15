@@ -4,7 +4,11 @@ import '../main.dart';
 import '../backend/profile.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+  const LoginPage({super.key, this.redirectTo});
+
+  /// 登录成功后要跳回的目标路由（例如 '/profile'）
+  final String? redirectTo;
+
   @override
   State<LoginPage> createState() => _LoginPageState();
 }
@@ -28,10 +32,15 @@ class _LoginPageState extends State<LoginPage> {
     setState(() => _loading = true);
     try {
       await ProfileBackend.instance.signIn(_email.text.trim(), _password.text);
-      if (mounted) {
+      if (!mounted) return;
+      if (widget.redirectTo != null) {
+        // 登录后回到原目标（例如 Profile）
+        Navigator.pushReplacementNamed(context, widget.redirectTo!);
+      } else {
         Navigator.pushReplacementNamed(context, AppRouter.home);
       }
     } on AuthException catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(e.message)));
@@ -49,7 +58,6 @@ class _LoginPageState extends State<LoginPage> {
       resizeToAvoidBottomInset: true,
       body: Stack(
         children: [
-          // 顶部 Grab 绿渐变头图（模仿 Grab 清爽块面）
           Container(
             height: 260,
             decoration: const BoxDecoration(
@@ -60,7 +68,6 @@ class _LoginPageState extends State<LoginPage> {
               ),
             ),
           ),
-          // 曲线卡片
           Align(
             alignment: Alignment.bottomCenter,
             child: SingleChildScrollView(
@@ -68,7 +75,6 @@ class _LoginPageState extends State<LoginPage> {
               child: Column(
                 children: [
                   const SizedBox(height: 28),
-                  // 顶部标题
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: const [
@@ -88,7 +94,6 @@ class _LoginPageState extends State<LoginPage> {
                     ],
                   ),
                   const SizedBox(height: 18),
-                  // 内容卡片
                   Container(
                     padding: const EdgeInsets.all(18),
                     decoration: BoxDecoration(
@@ -207,7 +212,6 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  // 辅助说明
                   Text(
                     'By continuing, you agree to our Terms & Privacy',
                     style: TextStyle(
@@ -261,15 +265,11 @@ class _RegisterPageState extends State<RegisterPage> {
         password: _password.text,
         plateNo: _plate.text.trim(),
       );
-      if (mounted) {
-        // 注册成功 → 返回登录或直接进首页
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          AppRouter.home,
-          (_) => false,
-        );
-      }
+      if (!mounted) return;
+      // 注册后：若有重定向目标，跳目标；否则回到 Home
+      Navigator.pushNamedAndRemoveUntil(context, AppRouter.home, (_) => false);
     } on AuthException catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(e.message)));
@@ -291,7 +291,6 @@ class _RegisterPageState extends State<RegisterPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 顶部品牌色标题条
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
@@ -404,14 +403,35 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 }
 
-// 个人资料占位（你后续做）
 class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key});
   @override
   Widget build(BuildContext context) {
+    final user = ProfileBackend.instance.currentUser;
     return Scaffold(
       appBar: AppBar(title: const Text('Profile')),
-      body: const Center(child: Text('Profile UI (to be implemented)')),
+      body: Center(
+        child: user == null
+            ? const Text('No user (should be redirected to login).')
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Name: ${user.name}'),
+                  Text('Email: ${user.email}'),
+                  if (user.plateNo != null) Text('Plate: ${user.plateNo}'),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () async {
+                      await ProfileBackend.instance.signOut();
+                      if (context.mounted) {
+                        Navigator.pop(context); // 回到上一页
+                      }
+                    },
+                    child: const Text('Sign out'),
+                  ),
+                ],
+              ),
+      ),
     );
   }
 }

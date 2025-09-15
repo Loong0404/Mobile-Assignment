@@ -16,9 +16,12 @@ class User {
   });
 }
 
-/// 你可以后续替换为 Firebase 实现；UI 只依赖这个接口
+/// 统一后端接口（可替换成 Firebase 实现）
 abstract class ProfileBackend {
   static ProfileBackend instance = MockProfileBackend();
+
+  /// 当前用户（未登录则为 null）
+  User? get currentUser;
 
   Future<User> signIn(String email, String password);
   Future<User> register({
@@ -27,17 +30,24 @@ abstract class ProfileBackend {
     required String password,
     String? plateNo,
   });
+
+  Future<void> signOut();
 }
 
-/// Mock 版：仅用于联调 UI
+/// Mock 版（仅联调 UI）
 class MockProfileBackend implements ProfileBackend {
   final Map<String, User> _db = {}; // email -> user
+  User? _current;
+
+  @override
+  User? get currentUser => _current;
 
   @override
   Future<User> signIn(String email, String password) async {
     await Future.delayed(const Duration(milliseconds: 800));
     final u = _db[email.toLowerCase()];
     if (u == null) throw AuthException('Account not found, please register');
+    _current = u; // 设置登录态
     return u;
   }
 
@@ -60,6 +70,13 @@ class MockProfileBackend implements ProfileBackend {
       plateNo: plateNo,
     );
     _db[key] = user;
+    _current = user; // 注册成功即登录
     return user;
+  }
+
+  @override
+  Future<void> signOut() async {
+    await Future.delayed(const Duration(milliseconds: 300));
+    _current = null;
   }
 }

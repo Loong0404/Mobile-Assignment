@@ -8,8 +8,8 @@ void main() {
 class WmsApp extends StatelessWidget {
   const WmsApp({super.key});
 
-  static const grabGreen = Color(0xFF00B14F); // Grab signature green
-  static const grabDark = Color(0xFF363A45); // Supporting dark
+  static const grabGreen = Color(0xFF00B14F);
+  static const grabDark = Color(0xFF363A45);
 
   @override
   Widget build(BuildContext context) {
@@ -62,7 +62,8 @@ class WmsApp extends StatelessWidget {
           foregroundColor: Colors.black87,
         ),
       ),
-      initialRoute: AppRouter.login,
+      // ⬇️ 初始路由：直接进 Home
+      initialRoute: AppRouter.home,
       routes: AppRouter.routes,
     );
   }
