@@ -23,15 +23,15 @@ class AppRouter {
     home: (ctx) => const HomePage(),
     billing: (ctx) => const BillingListPage(),
     feedback: (_) => const FeedbackListPage(),
-    // ⬇️ 关键：访问 /profile 时做「登录守卫」
+    // Profile路由处理：检查登录状态
     profile: (ctx) {
-      final signedIn = ProfileBackend.instance.currentUser != null;
-      if (signedIn) {
-        return const ProfilePage();
-      } else {
-        // 未登录就先去登录；登录后自动跳回 /profile
-        return const LoginPage(redirectTo: profile);
+      // 如果未登录，导航到登录页面，并设置redirectTo为profile
+      if (ProfileBackend.instance.currentUser == null) {
+        // 显示登录页面，并设置登录成功后返回profile页面
+        return LoginPage(redirectTo: profile);
       }
+      // 已登录则显示个人资料页
+      return const ProfilePage();
     },
   };
 }

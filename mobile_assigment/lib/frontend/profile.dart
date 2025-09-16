@@ -1,3 +1,4 @@
+import 'dart:convert'; // 用于Base64编码
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../app_router.dart';
@@ -5,6 +6,7 @@ import '../main.dart';
 import '../backend/profile.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:cloud_firestore/cloud_firestore.dart' as fs;
+import 'package:image_picker/image_picker.dart';
 
 /// =======================
 /// Login
@@ -58,6 +60,14 @@ class _LoginPageState extends State<LoginPage> {
 
     return Scaffold(
       resizeToAvoidBottomInset: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ),
       body: Stack(
         children: [
           Container(
@@ -148,10 +158,12 @@ class _LoginPageState extends State<LoginPage> {
                               ),
                             ),
                             validator: (v) {
-                              if (v == null || v.isEmpty)
+                              if (v == null || v.isEmpty) {
                                 return 'Please enter your password';
-                              if (v.length < 6)
+                              }
+                              if (v.length < 6) {
                                 return 'Password must be at least 6 characters';
+                              }
                               return null;
                             },
                           ),
@@ -170,7 +182,6 @@ class _LoginPageState extends State<LoginPage> {
                                     return;
                                   }
                                   try {
-                                    // 這個調用會「真的寄出」重置密碼的 email
                                     await fb.FirebaseAuth.instance
                                         .sendPasswordResetEmail(email: email);
                                     if (!mounted) return;
@@ -239,7 +250,7 @@ class _LoginPageState extends State<LoginPage> {
                   Text(
                     'By continuing, you agree to our Terms & Privacy',
                     style: TextStyle(
-                      color: grabDark.withOpacity(.55),
+                      color: WmsApp.grabDark.withOpacity(.55),
                       fontSize: 12,
                     ),
                   ),
@@ -268,7 +279,6 @@ class _RegisterPageState extends State<RegisterPage> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   final _confirm = TextEditingController();
-  final _plate = TextEditingController();
   bool _obscure1 = true, _obscure2 = true;
   bool _loading = false;
 
@@ -278,7 +288,6 @@ class _RegisterPageState extends State<RegisterPage> {
     _email.dispose();
     _password.dispose();
     _confirm.dispose();
-    _plate.dispose();
     super.dispose();
   }
 
@@ -290,7 +299,6 @@ class _RegisterPageState extends State<RegisterPage> {
         name: _name.text.trim(),
         email: _email.text.trim(),
         password: _password.text,
-        plateNo: _plate.text.trim(), // Firestore 由 backend 寫入 users/{uid}
       );
       if (!mounted) return;
       Navigator.pushNamedAndRemoveUntil(context, AppRouter.home, (_) => false);
@@ -351,20 +359,12 @@ class _RegisterPageState extends State<RegisterPage> {
                   prefixIcon: Icon(Icons.email_outlined),
                 ),
                 validator: (v) {
-                  if (v == null || v.trim().isEmpty)
+                  if (v == null || v.trim().isEmpty) {
                     return 'Please enter your email';
+                  }
                   final ok = RegExp(r'^[^@]+@[^@]+\.[^@]+$').hasMatch(v.trim());
                   return ok ? null : 'Invalid email format';
                 },
-              ),
-              const SizedBox(height: 12),
-
-              TextFormField(
-                controller: _plate,
-                decoration: const InputDecoration(
-                  labelText: 'Car plate (optional)',
-                  prefixIcon: Icon(Icons.directions_car_outlined),
-                ),
               ),
               const SizedBox(height: 12),
 
@@ -430,12 +430,12 @@ class _RegisterPageState extends State<RegisterPage> {
 }
 
 /// =======================
-/// Profile
+/// Profile（可編輯 + vehicles）
 /// =======================
 class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key});
 
-  // —— 硬編碼服務歷史（倒序）——
+  // ---- 硬編碼 Service history（倒序） ----
   List<_ServiceHistory> _demoHistory() => [
     _ServiceHistory(
       date: DateTime(2025, 6, 15),
@@ -460,30 +460,179 @@ class ProfilePage extends StatelessWidget {
     ),
   ]..sort((a, b) => b.date.compareTo(a.date));
 
-  Future<void> _editPlate(BuildContext context, String initial) async {
-    final uid = ProfileBackend.instance.currentUser!.id;
+  // ---- 更換頭像（使用Base64存储） ----
+  Future<void> _changePhoto(BuildContext context) async {
+    try {
+      final user = fb.FirebaseAuth.instance.currentUser!;
+      final picker = ImagePicker();
+
+      final picked = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 400, // 限制图片大小
+        maxHeight: 400,
+        imageQuality: 70, // 降低质量以减少大小
+      );
+
+      if (picked == null) return;
+
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Processing image...')));
+
+      // 读取图片数据并转换为Base64
+      final bytes = await picked.readAsBytes();
+      final base64Image = base64Encode(bytes);
+
+      // 检查大小（Firestore文档限制为1MB）
+      if (base64Image.length > 900000) {
+        // 留出一些空间给其他字段
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Image is too large. Please choose a smaller image.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      // 更新 Firestore
+      await fs.FirebaseFirestore.instance.collection('users').doc(user.uid).set(
+        {
+          'photoUrl': null, // 清除可能存在的旧URL
+          'photoBase64': base64Image, // 存储Base64图片数据
+          'updatedAt': fs.FieldValue.serverTimestamp(),
+        },
+        fs.SetOptions(merge: true),
+      );
+
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Profile photo updated successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error updating photo: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  // ---- 編輯名稱 ----
+  Future<void> _editName(BuildContext context, String initial) async {
     final ctrl = TextEditingController(text: initial);
     final form = GlobalKey<FormState>();
-    final focus = FocusNode();
 
     await showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Edit car plate'),
+        title: const Text('Edit name'),
         content: Form(
           key: form,
           child: TextFormField(
             controller: ctrl,
-            focusNode: focus,
-            decoration: const InputDecoration(
-              labelText: 'Plate number',
-              hintText: 'e.g., VBA1234',
-            ),
+            decoration: const InputDecoration(labelText: 'Full name'),
+            validator: (v) => (v == null || v.trim().isEmpty)
+                ? 'Please enter your name'
+                : null,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              if (!(form.currentState?.validate() ?? false)) return;
+              final name = ctrl.text.trim();
+              final u = fb.FirebaseAuth.instance.currentUser!;
+              await u.updateDisplayName(name);
+              await fs.FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(u.uid)
+                  .set({
+                    'name': name,
+                    'updatedAt': fs.FieldValue.serverTimestamp(),
+                  }, fs.SetOptions(merge: true));
+              if (context.mounted) Navigator.pop(context);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---- 通用 reauth ----
+  Future<bool> _reauth(BuildContext context, String email) async {
+    final pwdCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Reauthenticate'),
+        content: TextField(
+          controller: pwdCtrl,
+          obscureText: true,
+          decoration: const InputDecoration(labelText: 'Current password'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return false;
+    try {
+      final cred = fb.EmailAuthProvider.credential(
+        email: email,
+        password: pwdCtrl.text,
+      );
+      await fb.FirebaseAuth.instance.currentUser!.reauthenticateWithCredential(
+        cred,
+      );
+      return true;
+    } on fb.FirebaseAuthException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message ?? 'Reauth failed')));
+      }
+      return false;
+    }
+  }
+
+  // ---- 編輯 Email ----
+  Future<void> _editEmail(BuildContext context, String currentEmail) async {
+    final emailCtrl = TextEditingController(text: currentEmail);
+    final form = GlobalKey<FormState>();
+    await showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Change email'),
+        content: Form(
+          key: form,
+          child: TextFormField(
+            controller: emailCtrl,
+            keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(labelText: 'New email'),
             validator: (v) {
-              if (v == null) return null;
-              final t = v.trim();
-              if (t.isEmpty) return 'Please enter a plate number';
-              return null;
+              if (v == null || v.trim().isEmpty) return 'Enter new email';
+              final ok = RegExp(r'^[^@]+@[^@]+\.[^@]+$').hasMatch(v.trim());
+              return ok ? null : 'Invalid email format';
             },
           ),
         ),
@@ -495,11 +644,15 @@ class ProfilePage extends StatelessWidget {
           FilledButton(
             onPressed: () async {
               if (!(form.currentState?.validate() ?? false)) return;
+              final user = fb.FirebaseAuth.instance.currentUser!;
+              final newEmail = emailCtrl.text.trim();
+              if (!await _reauth(context, user.email ?? '')) return;
+              await user.verifyBeforeUpdateEmail(newEmail);
               await fs.FirebaseFirestore.instance
                   .collection('users')
-                  .doc(uid)
+                  .doc(user.uid)
                   .set({
-                    'plateNo': ctrl.text.trim(),
+                    'email': newEmail,
                     'updatedAt': fs.FieldValue.serverTimestamp(),
                   }, fs.SetOptions(merge: true));
               if (context.mounted) Navigator.pop(context);
@@ -509,8 +662,168 @@ class ProfilePage extends StatelessWidget {
         ],
       ),
     );
-    focus.dispose();
-    ctrl.dispose();
+  }
+
+  // ---- 修改密碼 ----
+  Future<void> _changePassword(BuildContext context, String email) async {
+    final currentCtrl = TextEditingController();
+    final newCtrl = TextEditingController();
+    final form = GlobalKey<FormState>();
+
+    await showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Change password'),
+        content: Form(
+          key: form,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: currentCtrl,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'Current password',
+                ),
+                validator: (v) =>
+                    (v == null || v.isEmpty) ? 'Enter current password' : null,
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: newCtrl,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'New password (min 6 chars)',
+                ),
+                validator: (v) => (v == null || v.length < 6)
+                    ? 'At least 6 characters'
+                    : null,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              if (!(form.currentState?.validate() ?? false)) return;
+              try {
+                final cred = fb.EmailAuthProvider.credential(
+                  email: email,
+                  password: currentCtrl.text,
+                );
+                final user = fb.FirebaseAuth.instance.currentUser!;
+                await user.reauthenticateWithCredential(cred);
+                await user.updatePassword(newCtrl.text);
+                if (context.mounted) Navigator.pop(context);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Password updated')),
+                  );
+                }
+              } on fb.FirebaseAuthException catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(e.message ?? 'Failed to update')),
+                  );
+                }
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---- 新增/編輯 Vehicle ----
+  Future<void> _editVehicle(
+    BuildContext context, {
+    String? docId,
+    String? plate,
+    String? brand,
+  }) async {
+    final uid = ProfileBackend.instance.currentUser!.id;
+    final userId = ProfileBackend.instance.currentUser!.userId;
+    final plateCtrl = TextEditingController(text: plate ?? '');
+    final brandCtrl = TextEditingController(text: brand ?? '');
+    final form = GlobalKey<FormState>();
+
+    await showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(docId == null ? 'Add vehicle' : 'Edit vehicle'),
+        content: Form(
+          key: form,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: plateCtrl,
+                decoration: const InputDecoration(labelText: 'Plate number'),
+                validator: (v) => (v == null || v.trim().isEmpty)
+                    ? 'Enter plate number'
+                    : null,
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: brandCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Brand (e.g., Toyota, Honda)',
+                ),
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'Enter brand' : null,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          if (docId != null)
+            TextButton(
+              onPressed: () async {
+                await fs.FirebaseFirestore.instance
+                    .collection('vehicle')
+                    .doc(docId)
+                    .delete();
+                if (context.mounted) Navigator.pop(context);
+              },
+              child: const Text('Delete', style: TextStyle(color: Colors.red)),
+            ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              if (!(form.currentState?.validate() ?? false)) return;
+              final data = {
+                'plateNumber': plateCtrl.text.trim(),
+                'carType': brandCtrl.text.trim(),
+                'userUid': uid,
+                'userId': userId,
+                'updatedAt': fs.FieldValue.serverTimestamp(),
+              };
+              if (docId == null) {
+                await fs.FirebaseFirestore.instance.collection('vehicle').add({
+                  ...data,
+                  'createdAt': fs.FieldValue.serverTimestamp(),
+                });
+              } else {
+                await fs.FirebaseFirestore.instance
+                    .collection('vehicle')
+                    .doc(docId)
+                    .set(data, fs.SetOptions(merge: true));
+              }
+              if (context.mounted) Navigator.pop(context);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -529,12 +842,16 @@ class ProfilePage extends StatelessWidget {
         .collection('users')
         .doc(uid)
         .snapshots();
-    final history = _demoHistory(); // 硬編碼歷史
-    final lastService = history.isNotEmpty ? history.first.date : null;
-    final nextService = lastService?.add(
-      const Duration(days: 365),
-    ); // 估算：最近一次 + 1 年
 
+    // 重要：去掉 orderBy 避免需要建立複合索引導致一直 loading
+    final vehiclesStream = fs.FirebaseFirestore.instance
+        .collection('vehicle')
+        .where('userUid', isEqualTo: uid)
+        .snapshots();
+
+    final history = _demoHistory();
+    final lastService = history.isNotEmpty ? history.first.date : null;
+    final nextService = lastService?.add(const Duration(days: 365));
     String humanDate(DateTime d) => DateFormat('yyyy-MM-dd').format(d);
     String nextServiceText() {
       if (nextService == null) return '—';
@@ -553,13 +870,11 @@ class ProfilePage extends StatelessWidget {
           final doc = snap.data?.data();
           final name = (doc?['name'] ?? backendUser.name) as String;
           final email = (doc?['email'] ?? backendUser.email) as String;
-          final plate = (doc?['plateNo'] ?? backendUser.plateNo) as String?;
-          final photoUrl = authUser.photoURL;
 
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              // ===== Header: Avatar + Name/Email =====
+              // ===== Header: Avatar + Name/Email/UserId =====
               Card(
                 elevation: 0,
                 shape: RoundedRectangleBorder(
@@ -569,15 +884,44 @@ class ProfilePage extends StatelessWidget {
                   padding: const EdgeInsets.all(16),
                   child: Row(
                     children: [
-                      CircleAvatar(
-                        radius: 34,
-                        backgroundImage:
-                            (photoUrl != null && photoUrl.isNotEmpty)
-                            ? NetworkImage(photoUrl)
-                            : null,
-                        child: (photoUrl == null || photoUrl.isEmpty)
-                            ? const Icon(Icons.person, size: 34)
-                            : null,
+                      StreamBuilder<fs.DocumentSnapshot>(
+                        stream: fs.FirebaseFirestore.instance
+                            .collection('users')
+                            .doc(uid)
+                            .snapshots(),
+                        builder: (context, snapshot) {
+                          if (!snapshot.hasData) {
+                            return const CircleAvatar(
+                              radius: 34,
+                              child: Icon(Icons.person, size: 34),
+                            );
+                          }
+
+                          final data =
+                              snapshot.data!.data() as Map<String, dynamic>?;
+                          final base64Image = data?['photoBase64'] as String?;
+
+                          if (base64Image == null || base64Image.isEmpty) {
+                            return const CircleAvatar(
+                              radius: 34,
+                              child: Icon(Icons.person, size: 34),
+                            );
+                          }
+
+                          try {
+                            return CircleAvatar(
+                              radius: 34,
+                              backgroundImage: MemoryImage(
+                                base64Decode(base64Image),
+                              ),
+                            );
+                          } catch (e) {
+                            return const CircleAvatar(
+                              radius: 34,
+                              child: Icon(Icons.person, size: 34),
+                            );
+                          }
+                        },
                       ),
                       const SizedBox(width: 16),
                       Expanded(
@@ -599,26 +943,159 @@ class ProfilePage extends StatelessWidget {
                           ],
                         ),
                       ),
+                      IconButton(
+                        tooltip: 'Change photo',
+                        onPressed: () => _changePhoto(context),
+                        icon: const Icon(Icons.photo_camera_outlined),
+                      ),
                     ],
                   ),
                 ),
               ),
               const SizedBox(height: 12),
 
-              // ===== Car plate =====
+              // ===== Editable rows: Name / Email / Password =====
               Card(
                 elevation: 0,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: ListTile(
-                  leading: const Icon(Icons.directions_car_outlined),
-                  title: const Text('Car plate'),
-                  subtitle: Text(plate ?? '—'),
-                  trailing: TextButton.icon(
-                    onPressed: () => _editPlate(context, plate ?? ''),
-                    icon: const Icon(Icons.edit, size: 18),
-                    label: const Text('Edit'),
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.person_outline),
+                      title: const Text('Name'),
+                      subtitle: Text(name),
+                      trailing: TextButton.icon(
+                        onPressed: () => _editName(context, name),
+                        icon: const Icon(Icons.edit, size: 18),
+                        label: const Text('Edit'),
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.email_outlined),
+                      title: const Text('Email'),
+                      subtitle: Text(email),
+                      trailing: TextButton.icon(
+                        onPressed: () => _editEmail(context, email),
+                        icon: const Icon(Icons.edit, size: 18),
+                        label: const Text('Edit'),
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.lock_outline),
+                      title: const Text('Password'),
+                      subtitle: const Text('Change your password'),
+                      trailing: TextButton.icon(
+                        onPressed: () => _changePassword(context, email),
+                        icon: const Icon(Icons.edit, size: 18),
+                        label: const Text('Change'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // ===== Vehicles =====
+              Card(
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'Vehicles',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          TextButton.icon(
+                            onPressed: () => _editVehicle(context),
+                            icon: const Icon(Icons.add),
+                            label: const Text('Add'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      StreamBuilder<fs.QuerySnapshot<Map<String, dynamic>>>(
+                        stream: vehiclesStream,
+                        builder: (context, vSnap) {
+                          if (vSnap.hasError) {
+                            return Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: Text(
+                                'Error: ${vSnap.error}',
+                                style: const TextStyle(color: Colors.red),
+                              ),
+                            );
+                          }
+                          if (!vSnap.hasData) {
+                            return const Padding(
+                              padding: EdgeInsets.all(8),
+                              child: Center(child: CircularProgressIndicator()),
+                            );
+                          }
+                          // 客戶端排序：createdAt desc（若缺失則放最後）
+                          final docs = [...vSnap.data!.docs];
+                          docs.sort((a, b) {
+                            final ta = a.data()['createdAt'];
+                            final tb = b.data()['createdAt'];
+                            if (ta == null && tb == null) return 0;
+                            if (ta == null) return 1;
+                            if (tb == null) return -1;
+                            return (tb as fs.Timestamp).compareTo(
+                              ta as fs.Timestamp,
+                            );
+                          });
+                          if (docs.isEmpty) {
+                            return const Padding(
+                              padding: EdgeInsets.all(8),
+                              child: Text('No vehicles yet.'),
+                            );
+                          }
+                          return ListView.separated(
+                            separatorBuilder: (_, __) =>
+                                const Divider(height: 1),
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: docs.length,
+                            itemBuilder: (_, i) {
+                              final d = docs[i];
+                              final plate = d['plateNumber'] as String? ?? '';
+                              final brand = d['carType'] as String? ?? '';
+                              return ListTile(
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                leading: const Icon(
+                                  Icons.directions_car_outlined,
+                                ),
+                                title: Text(plate),
+                                subtitle: Text(brand),
+                                trailing: TextButton.icon(
+                                  onPressed: () => _editVehicle(
+                                    context,
+                                    docId: d.id,
+                                    plate: plate,
+                                    brand: brand,
+                                  ),
+                                  icon: const Icon(Icons.edit, size: 18),
+                                  label: const Text('Edit'),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -697,7 +1174,6 @@ class ProfilePage extends StatelessWidget {
   }
 }
 
-/// 簡單的服務歷史模型（僅供本頁硬編碼展示）
 class _ServiceHistory {
   final DateTime date;
   final String type;
