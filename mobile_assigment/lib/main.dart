@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'firebase_options.dart';
 import 'app_router.dart';
 import 'frontend/home.dart';
-import 'frontend/profile.dart';
 import 'backend/profile.dart' as prof;
 
 void main() async {
