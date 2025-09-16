@@ -1,6 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart' as fb;
 import '../app_router.dart';
 import '../backend/profile.dart';
+import 'notifications.dart';
+import 'notifications_history.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -10,8 +14,40 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  Timer? _timer;
+  StreamSubscription? _authSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Listen to authentication state changes
+    _authSubscription = fb.FirebaseAuth.instance
+        .authStateChanges()
+        .listen((_) {
+          if (mounted) {
+            setState(() {});
+            // Check notifications when auth state changes
+            WmsNotification.checkNextServiceReminder(context);
+          }
+        });
+
+    // Update greeting every minute
+    _timer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _authSubscription?.cancel();
+    super.dispose();
+  }
+
   String _getGreeting() {
-    final hour = DateTime.now().hour;
+    final now = DateTime.now();
+    final hour = now.hour;
     if (hour < 12) {
       return 'Good Morning';
     } else if (hour < 17) {
@@ -23,12 +59,14 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    // Get current user and force refresh on auth state change
     final user = ProfileBackend.instance.currentUser;
+
     return Scaffold(
       body: SafeArea(
         child: CustomScrollView(
           slivers: [
-            // Custom App Bar
+            // ── Header / App Bar ────────────────────────────────────────────────
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
@@ -73,13 +111,21 @@ class _HomePageState extends State<HomePage> {
                     ),
                     IconButton(
                       icon: const Icon(Icons.notifications_none),
-                      onPressed: () {},
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const NotificationHistoryPage(),
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),
               ),
             ),
-            // Search Bar
+
+            // ── Search Bar ───────────────────────────────────────────────────────
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -99,7 +145,8 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
             ),
-            // Main Services Grid
+
+            // ── Main Services Grid ───────────────────────────────────────────────
             SliverPadding(
               padding: const EdgeInsets.all(16),
               sliver: SliverGrid(
@@ -138,7 +185,8 @@ class _HomePageState extends State<HomePage> {
                 ]),
               ),
             ),
-            // Promotional Banner
+
+            // ── Promotional Banner ───────────────────────────────────────────────
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -160,7 +208,8 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
             ),
-            // Recent Activities
+
+            // ── Recent Activities (mock) ────────────────────────────────────────
             SliverPadding(
               padding: const EdgeInsets.all(16),
               sliver: SliverToBoxAdapter(
@@ -187,6 +236,9 @@ class _HomePageState extends State<HomePage> {
                         separatorBuilder: (_, __) =>
                             Divider(color: Colors.grey[300]),
                         itemBuilder: (_, i) {
+                          final d = DateTime.now()
+                              .add(Duration(days: i))
+                              .toString();
                           return ListTile(
                             leading: const CircleAvatar(
                               backgroundColor: Colors.blue,
@@ -197,7 +249,7 @@ class _HomePageState extends State<HomePage> {
                             ),
                             title: Text('Booking ${i + 1}'),
                             subtitle: Text(
-                              'Scheduled for ${DateTime.now().add(Duration(days: i)).toString().substring(0, 10)}',
+                              'Scheduled for ${d.substring(0, 10)}',
                             ),
                           );
                         },
@@ -238,3 +290,4 @@ class _HomePageState extends State<HomePage> {
     );
   }
 }
+

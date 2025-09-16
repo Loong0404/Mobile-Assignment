@@ -20,12 +20,14 @@ class FeedbackListPage extends StatelessWidget {
         initialData: const [],
         stream: BillingBackend.instance.watchBillsForUser(uid),
         builder: (context, snap) {
-          final bills = (snap.data ?? [])
-              .where((b) => b.status == BillStatus.paid)
-              .toList()
-            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          final bills =
+              (snap.data ?? [])
+                  .where((b) => b.status == BillStatus.paid)
+                  .toList()
+                ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-          if (snap.connectionState == ConnectionState.waiting && bills.isEmpty) {
+          if (snap.connectionState == ConnectionState.waiting &&
+              bills.isEmpty) {
             return const Center(child: CircularProgressIndicator());
           }
           if (bills.isEmpty) {
@@ -45,11 +47,16 @@ class FeedbackListPage extends StatelessWidget {
                 builder: (context, fbSnap) {
                   final fb = fbSnap.data;
                   return ListTile(
-                    title: Text('Plate: ${bill.plate} • RM ${bill.amount.toStringAsFixed(2)}'),
+                    title: Text(
+                      'Plate: ${bill.plate} • RM ${bill.amount.toStringAsFixed(2)}',
+                    ),
                     subtitle: fb == null
                         ? const Text('No feedback yet')
-                        : Text('${_stars(fb.rating)}  •  ${_ymd(fb.createdAt)}\n${fb.comment}',
-                            maxLines: 2, overflow: TextOverflow.ellipsis),
+                        : Text(
+                            '${_stars(fb.rating)}  •  ${_ymd(fb.createdAt)}\n${fb.comment}',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                     isThreeLine: fb != null,
                     trailing: TextButton(
                       child: Text(fb == null ? 'Leave feedback' : 'Edit'),
@@ -57,7 +64,8 @@ class FeedbackListPage extends StatelessWidget {
                         final changed = await Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => FeedbackFormPage(bill: bill, existing: fb),
+                            builder: (_) =>
+                                FeedbackFormPage(bill: bill, existing: fb),
                           ),
                         );
                         if (changed == true && context.mounted) {
@@ -120,7 +128,10 @@ class _FeedbackFormPageState extends State<FeedbackFormPage> {
             const SizedBox(height: 16),
             Align(
               alignment: Alignment.centerLeft,
-              child: Text('Rating', style: Theme.of(context).textTheme.titleMedium),
+              child: Text(
+                'Rating',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
             ),
             const SizedBox(height: 8),
             Row(
@@ -146,14 +157,19 @@ class _FeedbackFormPageState extends State<FeedbackFormPage> {
               ),
             ),
             const Spacer(),
-            if (error != null) Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(error!, style: const TextStyle(color: Colors.red)),
-            ),
+            if (error != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(error!, style: const TextStyle(color: Colors.red)),
+              ),
             FilledButton.icon(
-              icon: saving ? const SizedBox(
-                width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2),
-              ) : const Icon(Icons.save),
+              icon: saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.save),
               label: Text(saving ? 'Saving...' : 'Submit'),
               onPressed: saving ? null : _submit,
             ),
@@ -173,8 +189,10 @@ class _FeedbackFormPageState extends State<FeedbackFormPage> {
           children: [
             _kv('Bill ID', bill.id),
             _kv('Plate', bill.plate),
-            _kv('Date',
-                '${bill.createdAt.year}-${bill.createdAt.month.toString().padLeft(2, '0')}-${bill.createdAt.day.toString().padLeft(2, '0')}'),
+            _kv(
+              'Date',
+              '${bill.createdAt.year}-${bill.createdAt.month.toString().padLeft(2, '0')}-${bill.createdAt.day.toString().padLeft(2, '0')}',
+            ),
             _kv('Amount', 'RM ${bill.amount.toStringAsFixed(2)}'),
             const SizedBox(height: 8),
             Align(
@@ -182,6 +200,7 @@ class _FeedbackFormPageState extends State<FeedbackFormPage> {
               child: Chip(
                 label: const Text('Paid'),
                 side: const BorderSide(color: Colors.green),
+                // ignore: deprecated_member_use
                 backgroundColor: Colors.green.withOpacity(.1),
                 labelStyle: const TextStyle(color: Colors.green),
               ),
@@ -204,7 +223,10 @@ class _FeedbackFormPageState extends State<FeedbackFormPage> {
   );
 
   Future<void> _submit() async {
-    setState(() { saving = true; error = null; });
+    setState(() {
+      saving = true;
+      error = null;
+    });
     try {
       final uid = currentUserId;
       if (uid == null) throw Exception('Please sign in.');

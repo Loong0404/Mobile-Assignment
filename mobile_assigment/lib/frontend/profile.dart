@@ -113,6 +113,7 @@ class _LoginPageState extends State<LoginPage> {
                       borderRadius: BorderRadius.circular(18),
                       boxShadow: [
                         BoxShadow(
+                          // ignore: deprecated_member_use
                           color: Colors.black.withOpacity(.06),
                           blurRadius: 12,
                           offset: Offset(0, 6),
@@ -132,8 +133,9 @@ class _LoginPageState extends State<LoginPage> {
                               prefixIcon: Icon(Icons.email_outlined),
                             ),
                             validator: (v) {
-                              if (v == null || v.trim().isEmpty)
+                              if (v == null || v.trim().isEmpty) {
                                 return 'Please enter your email';
+                              }
                               final ok = RegExp(
                                 r'^[^@]+@[^@]+\.[^@]+$',
                               ).hasMatch(v.trim());
@@ -185,6 +187,7 @@ class _LoginPageState extends State<LoginPage> {
                                     await fb.FirebaseAuth.instance
                                         .sendPasswordResetEmail(email: email);
                                     if (!mounted) return;
+                                    // ignore: use_build_context_synchronously
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
                                         content: Text(
@@ -197,6 +200,7 @@ class _LoginPageState extends State<LoginPage> {
                                     final msg =
                                         e.message ??
                                         'Failed to send reset email';
+                                    // ignore: use_build_context_synchronously
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(content: Text(msg)),
                                     );
@@ -208,6 +212,7 @@ class _LoginPageState extends State<LoginPage> {
                               Text(
                                 'Secure login',
                                 style: TextStyle(
+                                  // ignore: deprecated_member_use
                                   color: grabDark.withOpacity(.55),
                                 ),
                               ),
@@ -230,6 +235,7 @@ class _LoginPageState extends State<LoginPage> {
                               Text(
                                 "Don't have an account?",
                                 style: TextStyle(
+                                  // ignore: deprecated_member_use
                                   color: grabDark.withOpacity(.8),
                                 ),
                               ),
@@ -250,6 +256,7 @@ class _LoginPageState extends State<LoginPage> {
                   Text(
                     'By continuing, you agree to our Terms & Privacy',
                     style: TextStyle(
+                      // ignore: deprecated_member_use
                       color: WmsApp.grabDark.withOpacity(.55),
                       fontSize: 12,
                     ),
@@ -328,6 +335,7 @@ class _RegisterPageState extends State<RegisterPage> {
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
+                  // ignore: deprecated_member_use
                   color: grabGreen.withOpacity(.08),
                   borderRadius: BorderRadius.circular(14),
                 ),
@@ -438,21 +446,21 @@ class ProfilePage extends StatelessWidget {
   // ---- 硬編碼 Service history（倒序） ----
   List<_ServiceHistory> _demoHistory() => [
     _ServiceHistory(
-      date: DateTime(2025, 6, 15),
+      date: DateTime(2024, 9, 20),
       type: 'Maintenance A',
       workshop: 'WMS Petaling Jaya',
       mileage: 45210,
       amount: 320.00,
     ),
     _ServiceHistory(
-      date: DateTime(2024, 12, 10),
+      date: DateTime(2024, 3, 15),
       type: 'Brake Pad Replacement',
       workshop: 'WMS Shah Alam',
       mileage: 39800,
       amount: 560.00,
     ),
     _ServiceHistory(
-      date: DateTime(2024, 6, 5),
+      date: DateTime(2023, 9, 10),
       type: 'Inspection',
       workshop: 'WMS Subang',
       mileage: 35200,

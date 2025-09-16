@@ -33,8 +33,9 @@ class BillingListPage extends StatelessWidget {
             separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (_, i) {
               final b = bills[i];
-              final statusColor =
-                  b.status == BillStatus.paid ? Colors.green : Colors.orange;
+              final statusColor = b.status == BillStatus.paid
+                  ? Colors.green
+                  : Colors.orange;
               return ListTile(
                 title: Text('Plate: ${b.plate}'),
                 subtitle: Text(
@@ -42,6 +43,7 @@ class BillingListPage extends StatelessWidget {
                 ),
                 trailing: Chip(
                   label: Text(b.status == BillStatus.paid ? 'Paid' : 'Pending'),
+                  // ignore: deprecated_member_use
                   backgroundColor: statusColor.withOpacity(.1),
                   side: BorderSide(color: statusColor),
                   labelStyle: TextStyle(color: statusColor),
@@ -108,8 +110,9 @@ class _BillDetailPageState extends State<BillDetailPage> {
       );
     }
     final b = bill!;
-    final statusColor =
-        b.status == BillStatus.paid ? Colors.green : Colors.orange;
+    final statusColor = b.status == BillStatus.paid
+        ? Colors.green
+        : Colors.orange;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Bill Detail')),
@@ -117,8 +120,9 @@ class _BillDetailPageState extends State<BillDetailPage> {
         padding: const EdgeInsets.all(16),
         child: Card(
           elevation: 0,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -131,11 +135,15 @@ class _BillDetailPageState extends State<BillDetailPage> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('Status',
-                        style: TextStyle(fontWeight: FontWeight.w600)),
+                    const Text(
+                      'Status',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
                     Chip(
-                      label:
-                          Text(b.status == BillStatus.paid ? 'Paid' : 'Pending'),
+                      label: Text(
+                        b.status == BillStatus.paid ? 'Paid' : 'Pending',
+                      ),
+                      // ignore: deprecated_member_use
                       backgroundColor: statusColor.withOpacity(.1),
                       side: BorderSide(color: statusColor),
                       labelStyle: TextStyle(color: statusColor),
@@ -156,6 +164,7 @@ class _BillDetailPageState extends State<BillDetailPage> {
                           if (updated == true) {
                             // refresh
                             _load();
+                            // ignore: use_build_context_synchronously
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                 content: Text('Payment successful'),
@@ -164,7 +173,7 @@ class _BillDetailPageState extends State<BillDetailPage> {
                           }
                         },
                   child: const Text('Proceed to Payment'),
-                )
+                ),
               ],
             ),
           ),
@@ -217,8 +226,10 @@ class _PaymentPageState extends State<PaymentPage> {
             const SizedBox(height: 16),
             Align(
               alignment: Alignment.centerLeft,
-              child: Text('Payment Method',
-                  style: Theme.of(context).textTheme.titleMedium),
+              child: Text(
+                'Payment Method',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
             ),
             const SizedBox(height: 8),
             SegmentedButton<String>(
@@ -240,7 +251,10 @@ class _PaymentPageState extends State<PaymentPage> {
               onPressed: paying ? null : _pay,
               child: paying
                   ? const SizedBox(
-                      height: 20, width: 20, child: CircularProgressIndicator())
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(),
+                    )
                   : Text('Pay RM ${bill.amount.toStringAsFixed(2)}'),
             ),
           ],
@@ -259,8 +273,10 @@ class _PaymentPageState extends State<PaymentPage> {
           children: [
             _kv('Bill ID', bill.id),
             _kv('Plate', bill.plate),
-            _kv('Date',
-                '${bill.createdAt.year}-${bill.createdAt.month.toString().padLeft(2, '0')}-${bill.createdAt.day.toString().padLeft(2, '0')}'),
+            _kv(
+              'Date',
+              '${bill.createdAt.year}-${bill.createdAt.month.toString().padLeft(2, '0')}-${bill.createdAt.day.toString().padLeft(2, '0')}',
+            ),
             _kv('Amount', 'RM ${bill.amount.toStringAsFixed(2)}'),
           ],
         ),
@@ -269,15 +285,15 @@ class _PaymentPageState extends State<PaymentPage> {
   }
 
   Widget _kv(String k, String v) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(k, style: const TextStyle(fontWeight: FontWeight.w600)),
-            Flexible(child: Text(v, textAlign: TextAlign.right)),
-          ],
-        ),
-      );
+    padding: const EdgeInsets.symmetric(vertical: 6),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(k, style: const TextStyle(fontWeight: FontWeight.w600)),
+        Flexible(child: Text(v, textAlign: TextAlign.right)),
+      ],
+    ),
+  );
 
   Future<void> _pay() async {
     setState(() {
@@ -310,9 +326,7 @@ class _RequireLoginView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Billing')),
-      body: const Center(
-        child: Text('Please sign in to view your bills.'),
-      ),
+      body: const Center(child: Text('Please sign in to view your bills.')),
     );
   }
 }

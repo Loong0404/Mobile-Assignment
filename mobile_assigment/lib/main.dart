@@ -7,9 +7,14 @@ import 'backend/profile.dart' as prof;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Firebase
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  // 用 FirebaseAuth 驱动 ProfileBackend（覆盖默认 Mock）
+  // Set persistence to LOCAL (this ensures login state persists across app restarts)
+  await Firebase.initializeApp();
+
+  // Initialize ProfileBackend
   prof.ProfileBackend.instance = prof.FirebaseProfileBackend();
 
   runApp(const WmsApp());
@@ -68,6 +73,7 @@ class WmsApp extends StatelessWidget {
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
+            // ignore: deprecated_member_use
             borderSide: BorderSide(color: grabDark.withOpacity(.15)),
           ),
           focusedBorder: const OutlineInputBorder(
