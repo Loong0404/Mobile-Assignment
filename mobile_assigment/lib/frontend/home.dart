@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import '../app_router.dart';
 import '../backend/profile.dart';
+import '../main.dart';
 import 'notifications.dart';
 import 'notifications_history.dart';
 
@@ -22,15 +23,13 @@ class _HomePageState extends State<HomePage> {
     super.initState();
 
     // Listen to authentication state changes
-    _authSubscription = fb.FirebaseAuth.instance
-        .authStateChanges()
-        .listen((_) {
-          if (mounted) {
-            setState(() {});
-            // Check notifications when auth state changes
-            WmsNotification.checkNextServiceReminder(context);
-          }
-        });
+    _authSubscription = fb.FirebaseAuth.instance.authStateChanges().listen((_) {
+      if (mounted) {
+        setState(() {});
+        // Check notifications when auth state changes
+        WmsNotification.checkNextServiceReminder(context);
+      }
+    });
 
     // Update greeting every minute
     _timer = Timer.periodic(const Duration(minutes: 1), (_) {
@@ -68,142 +67,269 @@ class _HomePageState extends State<HomePage> {
           slivers: [
             // ── Header / App Bar ────────────────────────────────────────────────
             SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Row(
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                decoration: BoxDecoration(
+                  color: WmsApp.grabGreen,
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(24),
+                    bottomRight: Radius.circular(24),
+                  ),
+                ),
+                child: Column(
                   children: [
-                    CircleAvatar(
-                      backgroundColor: Colors.grey[200],
-                      child: Text(
-                        user?.name.substring(0, 1).toUpperCase() ?? '?',
-                        style: const TextStyle(
-                          color: Colors.blue,
-                          fontWeight: FontWeight.bold,
+                    Row(
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 2),
+                          ),
+                          child: CircleAvatar(
+                            backgroundColor: Colors.white,
+                            child: Text(
+                              user?.name.substring(0, 1).toUpperCase() ?? '?',
+                              style: TextStyle(
+                                color: WmsApp.grabGreen,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 18,
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _getGreeting(),
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey,
-                            ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _getGreeting(),
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.white70,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                user?.name ?? 'Guest',
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
                           ),
-                          Text(
-                            user?.name ?? 'Guest',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
+                        ),
+                        Container(
+                          decoration: BoxDecoration(
+                            // ignore: deprecated_member_use
+                            color: Colors.white.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(32),
                           ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.person_outline),
-                      onPressed: () =>
-                          Navigator.pushNamed(context, AppRouter.profile),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.notifications_none),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const NotificationHistoryPage(),
+                          child: Row(
+                            children: [
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.person_outline,
+                                  color: Colors.white,
+                                ),
+                                onPressed: () => Navigator.pushNamed(
+                                  context,
+                                  AppRouter.profile,
+                                ),
+                              ),
+                              Container(
+                                width: 1,
+                                height: 24,
+                                color: Colors.white24,
+                              ),
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.notifications_none,
+                                  color: Colors.white,
+                                ),
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          const NotificationHistoryPage(),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ],
                           ),
-                        );
-                      },
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
             ),
 
-            // ── Search Bar ───────────────────────────────────────────────────────
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[200],
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const TextField(
-                    decoration: InputDecoration(
-                      border: InputBorder.none,
-                      hintText: 'Search for services...',
-                      icon: Icon(Icons.search),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
             // ── Main Services Grid ───────────────────────────────────────────────
             SliverPadding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
               sliver: SliverGrid(
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 4,
-                  mainAxisSpacing: 16,
-                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 12,
+                  childAspectRatio: 0.75,
                 ),
                 delegate: SliverChildListDelegate([
                   _buildServiceItem(
-                    Icons.medical_services,
+                    Icons.calendar_month_rounded,
                     'Appointments',
                     AppRouter.appointments,
+                    color: const Color(0xFF1DC973), // Grab green
                   ),
                   _buildServiceItem(
-                    Icons.book_online,
+                    Icons.bookmark_rounded,
                     'Booking',
                     AppRouter.booking,
+                    color: const Color(0xFF00B1C9), // Cyan
                   ),
                   _buildServiceItem(
-                    Icons.local_shipping,
+                    Icons.local_shipping_rounded,
                     'Tracking',
                     AppRouter.tracking,
+                    color: const Color(0xFFFF5733), // Orange
                   ),
                   _buildServiceItem(
-                    Icons.receipt_long,
+                    Icons.receipt_rounded,
                     'Billing',
                     AppRouter.billing,
+                    color: const Color(0xFF6B45BC), // Purple
                   ),
                   _buildServiceItem(
-                    Icons.rate_review,
+                    Icons.star_rounded,
                     'Feedback',
                     AppRouter.feedback,
+                    color: const Color(0xFFFFB300), // Amber
                   ),
-                  _buildServiceItem(Icons.person, 'Profile', AppRouter.profile),
+                  _buildServiceItem(
+                    Icons.person_rounded,
+                    'Profile',
+                    AppRouter.profile,
+                    color: const Color(0xFF2196F3), // Blue
+                  ),
                 ]),
               ),
             ),
 
             // ── Promotional Banner ───────────────────────────────────────────────
             SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: Container(
-                  height: 160,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    color: Colors.blue[100],
-                  ),
-                  child: const Center(
-                    child: Text(
-                      'Special Offers',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
+              child: Container(
+                margin: const EdgeInsets.fromLTRB(16.0, 0, 16.0, 16.0),
+                height: 120,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Stack(
+                    children: [
+                      // Gradient background
+                      Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              WmsApp.grabGreen,
+                              // ignore: deprecated_member_use
+                              WmsApp.grabGreen.withOpacity(0.8),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
+                      // Decorative circle (simplified)
+                      Positioned(
+                        right: -20,
+                        top: -20,
+                        child: Container(
+                          width: 80,
+                          height: 80,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            // ignore: deprecated_member_use
+                            color: Colors.white.withOpacity(0.1),
+                          ),
+                        ),
+                      ),
+                      // Content
+                      Padding(
+                        padding: const EdgeInsets.all(12.0),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Text(
+                                      'Limited Time',
+                                      style: TextStyle(
+                                        color: WmsApp.grabGreen,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  const Text(
+                                    'Special Offers',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  const Text(
+                                    'Save up to 25% on services',
+                                    style: TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                // Handle offer button tap
+                              },
+                              style: TextButton.styleFrom(
+                                backgroundColor: Colors.white,
+                                foregroundColor: WmsApp.grabGreen,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: const Text(
+                                'Learn More',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -211,7 +337,7 @@ class _HomePageState extends State<HomePage> {
 
             // ── Recent Activities (mock) ────────────────────────────────────────
             SliverPadding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               sliver: SliverToBoxAdapter(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -265,7 +391,13 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildServiceItem(IconData icon, String label, String route) {
+  Widget _buildServiceItem(
+    IconData icon,
+    String label,
+    String route, {
+    Color? color,
+  }) {
+    final iconColor = color ?? Colors.blue;
     return GestureDetector(
       onTap: () => Navigator.pushNamed(context, route),
       child: Column(
@@ -274,15 +406,22 @@ class _HomePageState extends State<HomePage> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.blue[50],
+              // ignore: deprecated_member_use
+              color: iconColor.withOpacity(0.1),
               borderRadius: BorderRadius.circular(12),
+              // ignore: deprecated_member_use
+              border: Border.all(color: iconColor.withOpacity(0.2), width: 1),
             ),
-            child: Icon(icon, color: Colors.blue),
+            child: Icon(icon, color: iconColor, size: 24),
           ),
           const SizedBox(height: 4),
           Text(
             label,
-            style: const TextStyle(fontSize: 12),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: WmsApp.grabDark,
+            ),
             textAlign: TextAlign.center,
           ),
         ],
@@ -290,4 +429,3 @@ class _HomePageState extends State<HomePage> {
     );
   }
 }
-

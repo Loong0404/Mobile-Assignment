@@ -22,21 +22,21 @@ class WmsNotification {
         .doc(userId);
 
     try {
-      // 1. 检查最近12小时内是否已经有相同的通知
+      // 1. Create a unique notification ID based on content and date
       final now = DateTime.now();
-      final twelveHoursAgo = now.subtract(const Duration(hours: 12));
+      final today = DateTime(now.year, now.month, now.day);
+      final notificationId = '${title}_${message}_${today.toIso8601String()}';
 
-      final existingNotifications = await userRef
+      // 2. Check if notification with this ID exists for today
+      final existingNotification = await userRef
           .collection('notifications')
-          .where('title', isEqualTo: title)
-          .where('message', isEqualTo: message)
-          .where('timestamp', isGreaterThan: twelveHoursAgo)
+          .doc(notificationId)
           .get();
 
-      // 如果已经有相同的通知，不再保存
-      if (existingNotifications.docs.isNotEmpty) {
+      // If notification already exists for today, don't save it again
+      if (existingNotification.exists) {
         if (kDebugMode) {
-          print('Similar notification exists within 12 hours, skipping...');
+          print('Notification already exists for today, skipping...');
         }
         return;
       }
@@ -50,13 +50,16 @@ class WmsNotification {
         'lastChecked': fs.FieldValue.serverTimestamp(),
       }, fs.SetOptions(merge: true));
 
-      // 4. 添加通知到用户的通知子集合
-      final notificationRef = userRef.collection('notifications').doc();
+      // 4. Add notification using the consistent ID
+      final notificationRef = userRef
+          .collection('notifications')
+          .doc(notificationId);
       batch.set(notificationRef, {
         'title': title,
         'message': message,
         'timestamp': fs.FieldValue.serverTimestamp(),
         'read': false,
+        'notificationId': notificationId,
       });
 
       // 5. 提交批处理
