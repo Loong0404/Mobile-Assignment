@@ -5,28 +5,23 @@ import 'app_router.dart';
 import 'frontend/home.dart';
 import 'backend/profile.dart' as prof;
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Firebase
+  // Initialize Firebase once with options
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  // Set persistence to LOCAL (this ensures login state persists across app restarts)
-  await Firebase.initializeApp();
-
-  // Initialize ProfileBackend
+  // Initialize your Profile backend abstraction
   prof.ProfileBackend.instance = prof.FirebaseProfileBackend();
 
   runApp(const WmsApp());
 }
 
-// 创建一个新的widget来处理认证状态
 class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});
-
   @override
   Widget build(BuildContext context) {
-    return const HomePage(); // 直接返回HomePage
+    return const HomePage(); // keep as your original behavior
   }
 }
 
@@ -34,7 +29,7 @@ class WmsApp extends StatelessWidget {
   const WmsApp({super.key});
 
   static const grabGreen = Color(0xFF00B14F);
-  static const grabDark = Color(0xFF363A45);
+  static const grabDark  = Color(0xFF363A45);
 
   @override
   Widget build(BuildContext context) {
@@ -66,14 +61,10 @@ class WmsApp extends StatelessWidget {
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
           fillColor: Colors.white,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 14,
-          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            // ignore: deprecated_member_use
             borderSide: BorderSide(color: grabDark.withOpacity(.15)),
           ),
           focusedBorder: const OutlineInputBorder(
@@ -88,7 +79,7 @@ class WmsApp extends StatelessWidget {
           foregroundColor: Colors.black87,
         ),
       ),
-      initialRoute: AppRouter.home, // 默认显示首页
+      initialRoute: AppRouter.home,
       routes: AppRouter.routes,
     );
   }

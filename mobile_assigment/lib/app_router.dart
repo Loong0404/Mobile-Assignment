@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'frontend/home.dart';
-import 'frontend/profile.dart'; // 内含 LoginPage / RegisterPage / ProfilePage
-import 'backend/profile.dart'; // ⬅️ 为了读取 currentUser
-import 'frontend/billing.dart';
-import 'frontend/feedback.dart';
+import 'frontend/profile.dart';          // LoginPage / RegisterPage / ProfilePage
+import 'backend/profile.dart';          // currentUser
+import 'frontend/billing_pages.dart';   // billing list/detail/payment
+import 'frontend/feedback_pages.dart';  // feedback form + simple list
 
 class AppRouter {
   static const login = '/login';
@@ -18,19 +18,22 @@ class AppRouter {
   static const profile = '/profile';
 
   static Map<String, WidgetBuilder> routes = {
-    login: (ctx) => const LoginPage(), // 可被带参复用（见下方 /profile）
+    // Auth
+    login: (ctx) => const LoginPage(),
     register: (ctx) => const RegisterPage(),
+
+    // Core pages you already have
     home: (ctx) => const HomePage(),
+
+    // New
     billing: (ctx) => const BillingListPage(),
-    feedback: (_) => const FeedbackListPage(),
-    // Profile路由处理：检查登录状态
+    feedback: (ctx) => const FeedbackListPage(),
+
+    // Profile route checks login state
     profile: (ctx) {
-      // 如果未登录，导航到登录页面，并设置redirectTo为profile
       if (ProfileBackend.instance.currentUser == null) {
-        // 显示登录页面，并设置登录成功后返回profile页面
         return LoginPage(redirectTo: profile);
       }
-      // 已登录则显示个人资料页
       return const ProfilePage();
     },
   };

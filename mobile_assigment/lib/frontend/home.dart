@@ -206,17 +206,11 @@ class _HomePageState extends State<HomePage> {
                     color: const Color(0xFF6B45BC), // Purple
                   ),
                   _buildServiceItem(
-                    Icons.star_rounded,
+                    Icons.rate_review,
                     'Feedback',
                     AppRouter.feedback,
-                    color: const Color(0xFFFFB300), // Amber
                   ),
-                  _buildServiceItem(
-                    Icons.person_rounded,
-                    'Profile',
-                    AppRouter.profile,
-                    color: const Color(0xFF2196F3), // Blue
-                  ),
+                  _buildServiceItem(Icons.person, 'Profile', AppRouter.profile),
                 ]),
               ),
             ),
