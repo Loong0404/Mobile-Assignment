@@ -176,11 +176,7 @@ class _HomePageState extends State<HomePage> {
                     'Billing',
                     AppRouter.billing,
                   ),
-                  _buildServiceItem(
-                    Icons.rate_review,
-                    'Feedback',
-                    AppRouter.feedback,
-                  ),
+                  
                   _buildServiceItem(Icons.person, 'Profile', AppRouter.profile),
                 ]),
               ),
