@@ -11,7 +11,7 @@ Future<void> main() async {
   // Initialize Firebase once with options
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  // Initialize your Profile backend abstraction
+  // Your auth/profile backend bootstrap
   prof.ProfileBackend.instance = prof.FirebaseProfileBackend();
 
   runApp(const WmsApp());
@@ -21,7 +21,7 @@ class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});
   @override
   Widget build(BuildContext context) {
-    return const HomePage(); // keep as your original behavior
+    return const HomePage(); // keep your original behavior
   }
 }
 
@@ -80,7 +80,7 @@ class WmsApp extends StatelessWidget {
         ),
       ),
       initialRoute: AppRouter.home,
-      routes: AppRouter.routes,
+      routes: AppRouter.routes, // your existing router (kept)
     );
   }
 }

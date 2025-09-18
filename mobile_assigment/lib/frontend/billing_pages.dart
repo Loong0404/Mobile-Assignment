@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 import '../backend/billing.dart';
 import '../backend/payment.dart';
-import 'feedback_pages.dart';
 
 class BillingListPage extends StatelessWidget {
   const BillingListPage({super.key});
@@ -42,21 +39,13 @@ class BillingListPage extends StatelessWidget {
         stream: BillingService().watchUserInvoicesSafe(uid),
         builder: (context, snap) {
           if (snap.hasError) {
-            return Center(
-              child: Text(
-                'Error: ${snap.error}',
-                style: const TextStyle(color: Colors.red),
-                textAlign: TextAlign.center,
-              ),
-            );
+            return Center(child: Text('Error: ${snap.error}', style: const TextStyle(color: Colors.red)));
           }
-          if (!snap.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
+          if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+
           final invoices = snap.data!;
-          if (invoices.isEmpty) {
-            return const Center(child: Text('No invoices yet.'));
-          }
+          if (invoices.isEmpty) return const Center(child: Text('No invoices yet.'));
+
           return ListView.separated(
             itemCount: invoices.length,
             separatorBuilder: (_, __) => const Divider(height: 1),
@@ -64,6 +53,7 @@ class BillingListPage extends StatelessWidget {
               final inv = invoices[i];
               final paid = inv.status.toLowerCase() == 'paid';
               final color = paid ? Colors.green : Colors.orange;
+
               return ListTile(
                 title: Text('RM ${inv.amount.toStringAsFixed(2)} • ${inv.plateNumber}'),
                 subtitle: Text(_ymd(inv.date)),
@@ -75,9 +65,7 @@ class BillingListPage extends StatelessWidget {
                 ),
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => InvoiceDetailPage(invoiceID: inv.invoiceID),
-                  ),
+                  MaterialPageRoute(builder: (_) => InvoiceDetailPage(invoiceID: inv.invoiceID)),
                 ),
               );
             },
@@ -112,10 +100,7 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
   Future<void> _load() async {
     final data = await BillingService().getInvoice(widget.invoiceID);
     if (!mounted) return;
-    setState(() {
-      inv = data;
-      loading = false;
-    });
+    setState(() { inv = data; loading = false; });
   }
 
   @override
@@ -124,17 +109,12 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
     if (uid == null) return const _RequireLogin();
 
     if (loading) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Invoice')),
-        body: const Center(child: CircularProgressIndicator()),
-      );
+      return Scaffold(appBar: AppBar(title: const Text('Invoice')), body: const Center(child: CircularProgressIndicator()));
     }
     if (inv == null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Invoice')),
-        body: const Center(child: Text('Invoice not found')),
-      );
+      return Scaffold(appBar: AppBar(title: const Text('Invoice')), body: const Center(child: Text('Invoice not found')));
     }
+
     final i = inv!;
     final paid = i.status.toLowerCase() == 'paid';
     final color = paid ? Colors.green : Colors.orange;
@@ -170,31 +150,11 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
                     onPressed: () async {
                       final ok = await Navigator.push(
                         context,
-                        MaterialPageRoute(
-                          builder: (_) => PaymentPage(invoice: i),
-                        ),
+                        MaterialPageRoute(builder: (_) => PaymentPage(invoice: i)),
                       );
                       if (ok == true && mounted) await _load();
                     },
                     child: const Text('Proceed to Payment'),
-                  ),
-                if (paid)
-                  FilledButton.icon(
-                    icon: const Icon(Icons.reviews),
-                    label: const Text('Leave / Edit Feedback'),
-                    onPressed: () async {
-                      final saved = await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => FeedbackFormPage(invoice: i),
-                        ),
-                      );
-                      if (saved == true && mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Feedback saved')),
-                        );
-                      }
-                    },
                   ),
               ],
             ),
@@ -290,7 +250,6 @@ class _PaymentPageState extends State<PaymentPage> {
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid == null) throw Exception('Please sign in');
 
-      // Mark invoice paid, then create the payment doc
       await BillingService().markPaid(widget.invoice.invoiceID);
       await PaymentService().createPayment(
         invoiceID: widget.invoice.invoiceID,
