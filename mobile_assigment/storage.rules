@@ -1,0 +1,17 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() { return request.auth != null; }
+
+    // Each user can read/write only their own feedback photos
+    match /feedback_photos/{uid}/{file=**} {
+      allow write: if isSignedIn() && request.auth.uid == uid;
+      allow read:  if isSignedIn() && request.auth.uid == uid;
+    }
+
+    // Block everything else
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
