@@ -11,7 +11,7 @@ Future<void> main() async {
   // Initialize Firebase once with options
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  // Initialize your Profile backend abstraction
+  // Your auth/profile backend bootstrap
   prof.ProfileBackend.instance = prof.FirebaseProfileBackend();
 
   runApp(const WmsApp());
@@ -21,7 +21,7 @@ class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});
   @override
   Widget build(BuildContext context) {
-    return const HomePage(); // keep as your original behavior
+    return const HomePage(); // keep your original behavior
   }
 }
 
@@ -29,7 +29,7 @@ class WmsApp extends StatelessWidget {
   const WmsApp({super.key});
 
   static const grabGreen = Color(0xFF00B14F);
-  static const grabDark  = Color(0xFF363A45);
+  static const grabDark = Color(0xFF363A45);
 
   @override
   Widget build(BuildContext context) {
@@ -61,10 +61,14 @@ class WmsApp extends StatelessWidget {
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
           fillColor: Colors.white,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
+            // ignore: deprecated_member_use
             borderSide: BorderSide(color: grabDark.withOpacity(.15)),
           ),
           focusedBorder: const OutlineInputBorder(
@@ -80,7 +84,7 @@ class WmsApp extends StatelessWidget {
         ),
       ),
       initialRoute: AppRouter.home,
-      routes: AppRouter.routes,
+      routes: AppRouter.routes, // your existing router (kept)
     );
   }
 }

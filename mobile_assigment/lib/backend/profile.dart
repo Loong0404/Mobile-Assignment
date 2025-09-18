@@ -1,3 +1,4 @@
+// lib/backend/profile.dart
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:cloud_firestore/cloud_firestore.dart' as fs;
@@ -8,8 +9,8 @@ class AuthException implements Exception {
 }
 
 class User {
-  final String id; // Firebase UID
-  final String? userId; // U001, U002...（自訂的人類可讀ID）
+  final String id;       // Firebase UID
+  final String? userId;  // U001, U002...
   final String name;
   final String email;
   final String? photoUrl;
@@ -27,16 +28,17 @@ class User {
     String? email,
     String? userId,
     String? photoUrl,
-  }) => User(
-    id: id,
-    name: name ?? this.name,
-    email: email ?? this.email,
-    userId: userId ?? this.userId,
-    photoUrl: photoUrl ?? this.photoUrl,
-  );
+  }) =>
+      User(
+        id: id,
+        name: name ?? this.name,
+        email: email ?? this.email,
+        userId: userId ?? this.userId,
+        photoUrl: photoUrl ?? this.photoUrl,
+      );
 }
 
-/// 統一後端介面（UI 只依賴這個）
+/// 統一後端介面
 abstract class ProfileBackend {
   static ProfileBackend instance = FirebaseProfileBackend();
 
@@ -75,7 +77,7 @@ class FirebaseProfileBackend implements ProfileBackend {
   @override
   User? get currentUser => _current;
 
-  // 將 FirebaseAuth.User 映射到本地模型（僅基礎欄位）
+  // 映射 FirebaseAuth.User -> 本地模型
   User? _mapAuth(fb.User? u) {
     if (u == null) return null;
     final email = u.email ?? '';
@@ -85,7 +87,7 @@ class FirebaseProfileBackend implements ProfileBackend {
       id: u.uid,
       name: name,
       email: email,
-      userId: null, // 等 Firestore 補齊
+      userId: null, // 等 Firestore 合併
       photoUrl: u.photoURL,
     );
   }
@@ -102,35 +104,46 @@ class FirebaseProfileBackend implements ProfileBackend {
     );
   }
 
-  // 監聽 users/{uid}；若不存在或缺 userId，會初始化並填入 U001...（transaction 保證原子性）
+  /// 監聽 users/{uid}；若不存在或缺 `userId` 就**原子性**建立與編號
   Future<void> _attachUserDoc(fb.User? u) async {
     _docSub?.cancel();
     if (u == null) return;
 
     final uidRef = _db.collection('users').doc(u.uid);
-    final snap = await uidRef.get();
-    if (!snap.exists || (snap.data()?['userId'] == null)) {
-      await _db.runTransaction((txn) async {
-        final counterRef = _db.collection('meta').doc('counters');
-        final counterSnap = await txn.get(counterRef);
-        int seq = (counterSnap.data()?['userSeq'] ?? 0) as int;
-        if (snap.exists && snap.data()?['userId'] != null) {
-          // 已有 userId 無需加一（避免重複遞增）
-        } else {
-          seq += 1;
-          txn.set(counterRef, {'userSeq': seq}, fs.SetOptions(merge: true));
-          final userId = 'U${seq.toString().padLeft(3, '0')}';
-          txn.set(uidRef, {
-            'userId': userId,
-            'email': u.email,
-            'name': u.displayName ?? (u.email ?? 'User').split('@').first,
-            'photoUrl': u.photoURL,
-            'createdAt': fs.FieldValue.serverTimestamp(),
-          }, fs.SetOptions(merge: true));
-        }
-      });
-    }
 
+    // 用 transaction 產生唯一 userId
+    await _db.runTransaction((txn) async {
+      final userSnap = await txn.get(uidRef);
+      final existingUserId = userSnap.data()?['userId'];
+      if (existingUserId != null && (existingUserId as String).isNotEmpty) {
+        return; // 已有編號，什麼都不做
+      }
+
+      final counterRef = _db.collection('meta').doc('counters');
+      final counterSnap = await txn.get(counterRef);
+
+      final current = (counterSnap.data()?['userSeq'] ?? 0) as int;
+      final next = current + 1;
+      final newUserId = 'U${next.toString().padLeft(3, '0')}';
+
+      // 1) 更新計數器
+      txn.set(counterRef, {'userSeq': next}, fs.SetOptions(merge: true));
+
+      // 2) 寫入/合併使用者文件
+      txn.set(
+        uidRef,
+        {
+          'userId': newUserId,
+          'email': u.email,
+          'name': u.displayName ?? (u.email ?? 'User').split('@').first,
+          'photoUrl': u.photoURL,
+          'createdAt': fs.FieldValue.serverTimestamp(),
+        },
+        fs.SetOptions(merge: true),
+      );
+    });
+
+    // 即時合併最新文件到本地模型
     _docSub = uidRef.snapshots().listen((doc) {
       _current = _mergeWithDoc(_mapAuth(_auth.currentUser), doc.data());
     });
@@ -139,10 +152,8 @@ class FirebaseProfileBackend implements ProfileBackend {
   @override
   Future<User> signIn(String email, String password) async {
     try {
-      final cred = await _auth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
+      final cred =
+      await _auth.signInWithEmailAndPassword(email: email, password: password);
       final mapped = _mapAuth(cred.user);
       if (mapped == null) throw AuthException('Sign-in failed.');
       await _attachUserDoc(cred.user); // 確保有 userId

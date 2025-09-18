@@ -65,20 +65,23 @@ class BillingService {
     ).toMap());
   }
 
-  /// Original stream (needs valid 'date' on all docs)
-  Stream<List<InvoiceModel>> watchUserInvoices(String userId) {
-    return _col
-        .where('userId', isEqualTo: userId)
-        .orderBy('date', descending: true)
-        .snapshots()
-        .map((qs) => qs.docs.map(InvoiceModel.fromDoc).toList());
-  }
-
-  /// ✅ Safe stream: no Firestore orderBy; we sort in Dart so missing/invalid 'date'
-  /// in any doc won't cause the server result to drop your list.
+  /// Safer stream: no Firestore orderBy; we sort in Dart
   Stream<List<InvoiceModel>> watchUserInvoicesSafe(String userId) {
     return _col
         .where('userId', isEqualTo: userId)
+        .snapshots()
+        .map((qs) {
+          final list = qs.docs.map(InvoiceModel.fromDoc).toList();
+          list.sort((a, b) => b.date.compareTo(a.date));
+          return list;
+        });
+  }
+
+  /// Only PAID invoices for current user (for the Feedback page)
+  Stream<List<InvoiceModel>> watchPaidInvoicesSafe(String userId) {
+    return _col
+        .where('userId', isEqualTo: userId)
+        .where('status', isEqualTo: 'paid')
         .snapshots()
         .map((qs) {
           final list = qs.docs.map(InvoiceModel.fromDoc).toList();

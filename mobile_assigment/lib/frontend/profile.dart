@@ -1,445 +1,12 @@
-import 'dart:convert'; // 用于Base64编码
+// lib/frontend/profile_page.dart
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../app_router.dart';
-import '../main.dart';
 import '../backend/profile.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:cloud_firestore/cloud_firestore.dart' as fs;
 import 'package:image_picker/image_picker.dart';
 
-/// =======================
-/// Login
-/// =======================
-class LoginPage extends StatefulWidget {
-  const LoginPage({super.key, this.redirectTo});
-  final String? redirectTo;
-  @override
-  State<LoginPage> createState() => _LoginPageState();
-}
-
-class _LoginPageState extends State<LoginPage> {
-  final _form = GlobalKey<FormState>();
-  final _email = TextEditingController();
-  final _password = TextEditingController();
-  bool _obscure = true;
-  bool _loading = false;
-
-  @override
-  void dispose() {
-    _email.dispose();
-    _password.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    if (!_form.currentState!.validate()) return;
-    setState(() => _loading = true);
-    try {
-      await ProfileBackend.instance.signIn(_email.text.trim(), _password.text);
-      if (!mounted) return;
-      if (widget.redirectTo != null) {
-        Navigator.pushReplacementNamed(context, widget.redirectTo!);
-      } else {
-        Navigator.pushReplacementNamed(context, AppRouter.home);
-      }
-    } on AuthException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.message)));
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    const grabGreen = WmsApp.grabGreen;
-    const grabDark = WmsApp.grabDark;
-
-    return Scaffold(
-      resizeToAvoidBottomInset: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-      ),
-      body: Stack(
-        children: [
-          Container(
-            height: 260,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [grabGreen, Color(0xFF05C55A)],
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-              ),
-            ),
-          ),
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 80, 20, 20),
-              child: Column(
-                children: [
-                  const SizedBox(height: 28),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Text(
-                        'Welcome back',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 26,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        'Sign in to manage your vehicle service',
-                        style: TextStyle(color: Colors.white70),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  Container(
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(18),
-                      boxShadow: [
-                        BoxShadow(
-                          // ignore: deprecated_member_use
-                          color: Colors.black.withOpacity(.06),
-                          blurRadius: 12,
-                          offset: Offset(0, 6),
-                        ),
-                      ],
-                    ),
-                    child: Form(
-                      key: _form,
-                      child: Column(
-                        children: [
-                          TextFormField(
-                            controller: _email,
-                            keyboardType: TextInputType.emailAddress,
-                            decoration: const InputDecoration(
-                              labelText: 'Email',
-                              hintText: 'name@example.com',
-                              prefixIcon: Icon(Icons.email_outlined),
-                            ),
-                            validator: (v) {
-                              if (v == null || v.trim().isEmpty) {
-                                return 'Please enter your email';
-                              }
-                              final ok = RegExp(
-                                r'^[^@]+@[^@]+\.[^@]+$',
-                              ).hasMatch(v.trim());
-                              return ok ? null : 'Invalid email format';
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                          TextFormField(
-                            controller: _password,
-                            obscureText: _obscure,
-                            decoration: InputDecoration(
-                              labelText: 'Password',
-                              prefixIcon: const Icon(Icons.lock_outline),
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                  _obscure
-                                      ? Icons.visibility
-                                      : Icons.visibility_off,
-                                ),
-                                onPressed: () =>
-                                    setState(() => _obscure = !_obscure),
-                              ),
-                            ),
-                            validator: (v) {
-                              if (v == null || v.isEmpty) {
-                                return 'Please enter your password';
-                              }
-                              if (v.length < 6) {
-                                return 'Password must be at least 6 characters';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              TextButton(
-                                onPressed: () async {
-                                  final email = _email.text.trim();
-                                  if (email.isEmpty) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Enter your email first'),
-                                      ),
-                                    );
-                                    return;
-                                  }
-                                  try {
-                                    await fb.FirebaseAuth.instance
-                                        .sendPasswordResetEmail(email: email);
-                                    if (!mounted) return;
-                                    // ignore: use_build_context_synchronously
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          'Password reset email sent to $email',
-                                        ),
-                                      ),
-                                    );
-                                  } on fb.FirebaseAuthException catch (e) {
-                                    if (!mounted) return;
-                                    final msg =
-                                        e.message ??
-                                        'Failed to send reset email';
-                                    // ignore: use_build_context_synchronously
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text(msg)),
-                                    );
-                                  }
-                                },
-                                child: const Text('Forgot password?'),
-                              ),
-                              const Spacer(),
-                              Text(
-                                'Secure login',
-                                style: TextStyle(
-                                  // ignore: deprecated_member_use
-                                  color: grabDark.withOpacity(.55),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          _loading
-                              ? const Padding(
-                                  padding: EdgeInsets.symmetric(vertical: 8.0),
-                                  child: CircularProgressIndicator(),
-                                )
-                              : ElevatedButton(
-                                  onPressed: _submit,
-                                  child: const Text('Sign in'),
-                                ),
-                          const SizedBox(height: 8),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                "Don't have an account?",
-                                style: TextStyle(
-                                  // ignore: deprecated_member_use
-                                  color: grabDark.withOpacity(.8),
-                                ),
-                              ),
-                              TextButton(
-                                onPressed: () => Navigator.pushNamed(
-                                  context,
-                                  AppRouter.register,
-                                ),
-                                child: const Text('Create account'),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'By continuing, you agree to our Terms & Privacy',
-                    style: TextStyle(
-                      // ignore: deprecated_member_use
-                      color: WmsApp.grabDark.withOpacity(.55),
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// =======================
-/// Register
-/// =======================
-class RegisterPage extends StatefulWidget {
-  const RegisterPage({super.key});
-  @override
-  State<RegisterPage> createState() => _RegisterPageState();
-}
-
-class _RegisterPageState extends State<RegisterPage> {
-  final _form = GlobalKey<FormState>();
-  final _name = TextEditingController();
-  final _email = TextEditingController();
-  final _password = TextEditingController();
-  final _confirm = TextEditingController();
-  bool _obscure1 = true, _obscure2 = true;
-  bool _loading = false;
-
-  @override
-  void dispose() {
-    _name.dispose();
-    _email.dispose();
-    _password.dispose();
-    _confirm.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    if (!_form.currentState!.validate()) return;
-    setState(() => _loading = true);
-    try {
-      await ProfileBackend.instance.register(
-        name: _name.text.trim(),
-        email: _email.text.trim(),
-        password: _password.text,
-      );
-      if (!mounted) return;
-      Navigator.pushNamedAndRemoveUntil(context, AppRouter.home, (_) => false);
-    } on AuthException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.message)));
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    const grabGreen = WmsApp.grabGreen;
-
-    return Scaffold(
-      appBar: AppBar(title: const Text('Create your account')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-        child: Form(
-          key: _form,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  // ignore: deprecated_member_use
-                  color: grabGreen.withOpacity(.08),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Text(
-                  'Join WMS — book services, track progress, and pay bills easily.',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              TextFormField(
-                controller: _name,
-                decoration: const InputDecoration(
-                  labelText: 'Full name',
-                  prefixIcon: Icon(Icons.person_outline),
-                ),
-                validator: (v) => (v == null || v.trim().isEmpty)
-                    ? 'Please enter your name'
-                    : null,
-              ),
-              const SizedBox(height: 12),
-
-              TextFormField(
-                controller: _email,
-                keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(
-                  labelText: 'Email',
-                  hintText: 'name@example.com',
-                  prefixIcon: Icon(Icons.email_outlined),
-                ),
-                validator: (v) {
-                  if (v == null || v.trim().isEmpty) {
-                    return 'Please enter your email';
-                  }
-                  final ok = RegExp(r'^[^@]+@[^@]+\.[^@]+$').hasMatch(v.trim());
-                  return ok ? null : 'Invalid email format';
-                },
-              ),
-              const SizedBox(height: 12),
-
-              TextFormField(
-                controller: _password,
-                obscureText: _obscure1,
-                decoration: InputDecoration(
-                  labelText: 'Password',
-                  prefixIcon: const Icon(Icons.lock_outline),
-                  suffixIcon: IconButton(
-                    onPressed: () => setState(() => _obscure1 = !_obscure1),
-                    icon: Icon(
-                      _obscure1 ? Icons.visibility : Icons.visibility_off,
-                    ),
-                  ),
-                ),
-                validator: (v) {
-                  if (v == null || v.isEmpty) return 'Please set a password';
-                  if (v.length < 6) return 'At least 6 characters';
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
-
-              TextFormField(
-                controller: _confirm,
-                obscureText: _obscure2,
-                decoration: InputDecoration(
-                  labelText: 'Confirm password',
-                  prefixIcon: const Icon(Icons.lock_person_outlined),
-                  suffixIcon: IconButton(
-                    onPressed: () => setState(() => _obscure2 = !_obscure2),
-                    icon: Icon(
-                      _obscure2 ? Icons.visibility : Icons.visibility_off,
-                    ),
-                  ),
-                ),
-                validator: (v) =>
-                    (v != _password.text) ? 'Passwords do not match' : null,
-              ),
-              const SizedBox(height: 16),
-
-              _loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : ElevatedButton(
-                      onPressed: _submit,
-                      child: const Text('Create account'),
-                    ),
-              const SizedBox(height: 8),
-              Center(
-                child: TextButton(
-                  onPressed: () =>
-                      Navigator.pushReplacementNamed(context, AppRouter.login),
-                  child: const Text('Already have an account? Sign in'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// =======================
-/// Profile（可編輯 + vehicles）
-/// =======================
 class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key});
 
@@ -468,33 +35,24 @@ class ProfilePage extends StatelessWidget {
     ),
   ]..sort((a, b) => b.date.compareTo(a.date));
 
-  // ---- 更換頭像（使用Base64存储） ----
+  // ---- 更換頭像（使用 Base64） ----
   Future<void> _changePhoto(BuildContext context) async {
     try {
-      final user = fb.FirebaseAuth.instance.currentUser!;
+      final u = fb.FirebaseAuth.instance.currentUser!;
       final picker = ImagePicker();
 
       final picked = await picker.pickImage(
         source: ImageSource.gallery,
-        maxWidth: 400, // 限制图片大小
+        maxWidth: 400,
         maxHeight: 400,
-        imageQuality: 70, // 降低质量以减少大小
+        imageQuality: 70,
       );
-
       if (picked == null) return;
 
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Processing image...')));
-
-      // 读取图片数据并转换为Base64
       final bytes = await picked.readAsBytes();
       final base64Image = base64Encode(bytes);
 
-      // 检查大小（Firestore文档限制为1MB）
       if (base64Image.length > 900000) {
-        // 留出一些空间给其他字段
         if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -505,11 +63,10 @@ class ProfilePage extends StatelessWidget {
         return;
       }
 
-      // 更新 Firestore
-      await fs.FirebaseFirestore.instance.collection('users').doc(user.uid).set(
+      await fs.FirebaseFirestore.instance.collection('users').doc(u.uid).set(
         {
-          'photoUrl': null, // 清除可能存在的旧URL
-          'photoBase64': base64Image, // 存储Base64图片数据
+          'photoUrl': null,
+          'photoBase64': base64Image,
           'updatedAt': fs.FieldValue.serverTimestamp(),
         },
         fs.SetOptions(merge: true),
@@ -518,7 +75,7 @@ class ProfilePage extends StatelessWidget {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Profile photo updated successfully'),
+          content: Text('Profile photo updated'),
           backgroundColor: Colors.green,
         ),
       );
@@ -547,16 +104,12 @@ class ProfilePage extends StatelessWidget {
           child: TextFormField(
             controller: ctrl,
             decoration: const InputDecoration(labelText: 'Full name'),
-            validator: (v) => (v == null || v.trim().isEmpty)
-                ? 'Please enter your name'
-                : null,
+            validator: (v) =>
+            (v == null || v.trim().isEmpty) ? 'Please enter your name' : null,
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           FilledButton(
             onPressed: () async {
               if (!(form.currentState?.validate() ?? false)) return;
@@ -566,10 +119,8 @@ class ProfilePage extends StatelessWidget {
               await fs.FirebaseFirestore.instance
                   .collection('users')
                   .doc(u.uid)
-                  .set({
-                    'name': name,
-                    'updatedAt': fs.FieldValue.serverTimestamp(),
-                  }, fs.SetOptions(merge: true));
+                  .set({'name': name, 'updatedAt': fs.FieldValue.serverTimestamp()},
+                  fs.SetOptions(merge: true));
               if (context.mounted) Navigator.pop(context);
             },
             child: const Text('Save'),
@@ -579,7 +130,7 @@ class ProfilePage extends StatelessWidget {
     );
   }
 
-  // ---- 通用 reauth ----
+  // ---- reauth ----
   Future<bool> _reauth(BuildContext context, String email) async {
     final pwdCtrl = TextEditingController();
     final ok = await showDialog<bool>(
@@ -592,32 +143,22 @@ class ProfilePage extends StatelessWidget {
           decoration: const InputDecoration(labelText: 'Current password'),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Continue'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Continue')),
         ],
       ),
     );
     if (ok != true) return false;
     try {
-      final cred = fb.EmailAuthProvider.credential(
-        email: email,
-        password: pwdCtrl.text,
-      );
-      await fb.FirebaseAuth.instance.currentUser!.reauthenticateWithCredential(
-        cred,
-      );
+      final cred =
+      fb.EmailAuthProvider.credential(email: email, password: pwdCtrl.text);
+      await fb.FirebaseAuth.instance.currentUser!.reauthenticateWithCredential(cred);
       return true;
     } on fb.FirebaseAuthException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(e.message ?? 'Reauth failed')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message ?? 'Reauth failed')),
+        );
       }
       return false;
     }
@@ -627,6 +168,7 @@ class ProfilePage extends StatelessWidget {
   Future<void> _editEmail(BuildContext context, String currentEmail) async {
     final emailCtrl = TextEditingController(text: currentEmail);
     final form = GlobalKey<FormState>();
+
     await showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -645,25 +187,30 @@ class ProfilePage extends StatelessWidget {
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           FilledButton(
             onPressed: () async {
               if (!(form.currentState?.validate() ?? false)) return;
               final user = fb.FirebaseAuth.instance.currentUser!;
               final newEmail = emailCtrl.text.trim();
               if (!await _reauth(context, user.email ?? '')) return;
+
               await user.verifyBeforeUpdateEmail(newEmail);
               await fs.FirebaseFirestore.instance
                   .collection('users')
                   .doc(user.uid)
-                  .set({
-                    'email': newEmail,
-                    'updatedAt': fs.FieldValue.serverTimestamp(),
-                  }, fs.SetOptions(merge: true));
+                  .set(
+                {'email': newEmail, 'updatedAt': fs.FieldValue.serverTimestamp()},
+                fs.SetOptions(merge: true),
+              );
               if (context.mounted) Navigator.pop(context);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Verification email sent. Please confirm to complete update.'),
+                  ),
+                );
+              }
             },
             child: const Text('Save'),
           ),
@@ -690,31 +237,24 @@ class ProfilePage extends StatelessWidget {
               TextFormField(
                 controller: currentCtrl,
                 obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'Current password',
-                ),
+                decoration: const InputDecoration(labelText: 'Current password'),
                 validator: (v) =>
-                    (v == null || v.isEmpty) ? 'Enter current password' : null,
+                (v == null || v.isEmpty) ? 'Enter current password' : null,
               ),
               const SizedBox(height: 8),
               TextFormField(
                 controller: newCtrl,
                 obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'New password (min 6 chars)',
-                ),
-                validator: (v) => (v == null || v.length < 6)
-                    ? 'At least 6 characters'
-                    : null,
+                decoration:
+                const InputDecoration(labelText: 'New password (min 6 chars)'),
+                validator: (v) =>
+                (v == null || v.length < 6) ? 'At least 6 characters' : null,
               ),
             ],
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           FilledButton(
             onPressed: () async {
               if (!(form.currentState?.validate() ?? false)) return;
@@ -749,11 +289,11 @@ class ProfilePage extends StatelessWidget {
 
   // ---- 新增/編輯 Vehicle ----
   Future<void> _editVehicle(
-    BuildContext context, {
-    String? docId,
-    String? plate,
-    String? brand,
-  }) async {
+      BuildContext context, {
+        String? docId,
+        String? plate,
+        String? brand,
+      }) async {
     final uid = ProfileBackend.instance.currentUser!.id;
     final userId = ProfileBackend.instance.currentUser!.userId;
     final plateCtrl = TextEditingController(text: plate ?? '');
@@ -772,9 +312,8 @@ class ProfilePage extends StatelessWidget {
               TextFormField(
                 controller: plateCtrl,
                 decoration: const InputDecoration(labelText: 'Plate number'),
-                validator: (v) => (v == null || v.trim().isEmpty)
-                    ? 'Enter plate number'
-                    : null,
+                validator: (v) =>
+                (v == null || v.trim().isEmpty) ? 'Enter plate number' : null,
               ),
               const SizedBox(height: 8),
               TextFormField(
@@ -783,7 +322,7 @@ class ProfilePage extends StatelessWidget {
                   labelText: 'Brand (e.g., Toyota, Honda)',
                 ),
                 validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Enter brand' : null,
+                (v == null || v.trim().isEmpty) ? 'Enter brand' : null,
               ),
             ],
           ),
@@ -800,10 +339,7 @@ class ProfilePage extends StatelessWidget {
               },
               child: const Text('Delete', style: TextStyle(color: Colors.red)),
             ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           FilledButton(
             onPressed: () async {
               if (!(form.currentState?.validate() ?? false)) return;
@@ -846,12 +382,9 @@ class ProfilePage extends StatelessWidget {
     }
 
     final uid = backendUser.id;
-    final userDocStream = fs.FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .snapshots();
+    final userDocStream =
+    fs.FirebaseFirestore.instance.collection('users').doc(uid).snapshots();
 
-    // 重要：去掉 orderBy 避免需要建立複合索引導致一直 loading
     final vehiclesStream = fs.FirebaseFirestore.instance
         .collection('vehicle')
         .where('userUid', isEqualTo: uid)
@@ -882,12 +415,10 @@ class ProfilePage extends StatelessWidget {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              // ===== Header: Avatar + Name/Email/UserId =====
+              // ===== Header: Avatar + Name/Email =====
               Card(
                 elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Row(
@@ -904,18 +435,15 @@ class ProfilePage extends StatelessWidget {
                               child: Icon(Icons.person, size: 34),
                             );
                           }
-
                           final data =
-                              snapshot.data!.data() as Map<String, dynamic>?;
+                          snapshot.data!.data() as Map<String, dynamic>?;
                           final base64Image = data?['photoBase64'] as String?;
-
                           if (base64Image == null || base64Image.isEmpty) {
                             return const CircleAvatar(
                               radius: 34,
                               child: Icon(Icons.person, size: 34),
                             );
                           }
-
                           try {
                             return CircleAvatar(
                               radius: 34,
@@ -923,7 +451,7 @@ class ProfilePage extends StatelessWidget {
                                 base64Decode(base64Image),
                               ),
                             );
-                          } catch (e) {
+                          } catch (_) {
                             return const CircleAvatar(
                               radius: 34,
                               child: Icon(Icons.person, size: 34),
@@ -944,10 +472,7 @@ class ProfilePage extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: 4),
-                            Text(
-                              email,
-                              style: const TextStyle(color: Colors.black54),
-                            ),
+                            Text(email, style: const TextStyle(color: Colors.black54)),
                           ],
                         ),
                       ),
@@ -965,9 +490,7 @@ class ProfilePage extends StatelessWidget {
               // ===== Editable rows: Name / Email / Password =====
               Card(
                 elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 child: Column(
                   children: [
                     ListTile(
@@ -1010,9 +533,7 @@ class ProfilePage extends StatelessWidget {
               // ===== Vehicles =====
               Card(
                 elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                   child: Column(
@@ -1021,10 +542,8 @@ class ProfilePage extends StatelessWidget {
                       Row(
                         children: [
                           const Expanded(
-                            child: Text(
-                              'Vehicles',
-                              style: TextStyle(fontWeight: FontWeight.w600),
-                            ),
+                            child: Text('Vehicles',
+                                style: TextStyle(fontWeight: FontWeight.w600)),
                           ),
                           TextButton.icon(
                             onPressed: () => _editVehicle(context),
@@ -1052,7 +571,6 @@ class ProfilePage extends StatelessWidget {
                               child: Center(child: CircularProgressIndicator()),
                             );
                           }
-                          // 客戶端排序：createdAt desc（若缺失則放最後）
                           final docs = [...vSnap.data!.docs];
                           docs.sort((a, b) {
                             final ta = a.data()['createdAt'];
@@ -1060,9 +578,7 @@ class ProfilePage extends StatelessWidget {
                             if (ta == null && tb == null) return 0;
                             if (ta == null) return 1;
                             if (tb == null) return -1;
-                            return (tb as fs.Timestamp).compareTo(
-                              ta as fs.Timestamp,
-                            );
+                            return (tb as fs.Timestamp).compareTo(ta as fs.Timestamp);
                           });
                           if (docs.isEmpty) {
                             return const Padding(
@@ -1071,8 +587,7 @@ class ProfilePage extends StatelessWidget {
                             );
                           }
                           return ListView.separated(
-                            separatorBuilder: (_, __) =>
-                                const Divider(height: 1),
+                            separatorBuilder: (_, __) => const Divider(height: 1),
                             shrinkWrap: true,
                             physics: const NeverScrollableScrollPhysics(),
                             itemCount: docs.length,
@@ -1083,9 +598,8 @@ class ProfilePage extends StatelessWidget {
                               return ListTile(
                                 dense: true,
                                 contentPadding: EdgeInsets.zero,
-                                leading: const Icon(
-                                  Icons.directions_car_outlined,
-                                ),
+                                leading:
+                                const Icon(Icons.directions_car_outlined),
                                 title: Text(plate),
                                 subtitle: Text(brand),
                                 trailing: TextButton.icon(
@@ -1112,32 +626,26 @@ class ProfilePage extends StatelessWidget {
               // ===== Estimated next service =====
               Card(
                 elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 child: ListTile(
                   leading: const Icon(Icons.schedule),
                   title: const Text('Estimated time for next service'),
                   subtitle: Text(nextServiceText()),
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 24),
 
-              // ===== Service history (hardcoded) =====
+              // ===== Service history（hard-coded）=====
               Card(
                 elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Service history',
-                        style: TextStyle(fontWeight: FontWeight.w600),
-                      ),
+                      const Text('Service history',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
                       const SizedBox(height: 8),
                       ListView.separated(
                         separatorBuilder: (_, __) => const Divider(height: 1),
@@ -1149,12 +657,14 @@ class ProfilePage extends StatelessWidget {
                           return ListTile(
                             dense: true,
                             contentPadding: EdgeInsets.zero,
-                            leading: const Icon(Icons.build_circle_outlined),
+                            leading:
+                            const Icon(Icons.build_circle_outlined),
                             title: Text(h.type),
                             subtitle: Text(
                               '${humanDate(h.date)} • ${h.workshop} • ${h.mileage} km',
                             ),
-                            trailing: Text('RM ${h.amount.toStringAsFixed(2)}'),
+                            trailing:
+                            Text('RM ${h.amount.toStringAsFixed(2)}'),
                           );
                         },
                       ),
@@ -1164,7 +674,6 @@ class ProfilePage extends StatelessWidget {
               ),
               const SizedBox(height: 24),
 
-              // ===== Sign out =====
               Center(
                 child: ElevatedButton(
                   onPressed: () async {

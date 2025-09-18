@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+
 import 'frontend/home.dart';
-import 'frontend/profile.dart';          // LoginPage / RegisterPage / ProfilePage
-import 'backend/profile.dart';          // currentUser
-import 'frontend/billing_pages.dart';   // billing list/detail/payment
-import 'frontend/feedback_pages.dart';  // feedback form + simple list
+import 'frontend/login.dart'; // 新
+import 'frontend/register.dart'; // 新
+import 'frontend/profile.dart'; // 仅 ProfilePage
+import 'backend/profile.dart';
+import 'frontend/billing_pages.dart';
+import 'frontend/feedback_pages.dart';
 
 class AppRouter {
   static const login = '/login';
@@ -18,21 +21,14 @@ class AppRouter {
   static const profile = '/profile';
 
   static Map<String, WidgetBuilder> routes = {
-    // Auth
     login: (ctx) => const LoginPage(),
     register: (ctx) => const RegisterPage(),
-
-    // Core pages you already have
     home: (ctx) => const HomePage(),
-
-    // New
     billing: (ctx) => const BillingListPage(),
     feedback: (ctx) => const FeedbackListPage(),
-
-    // Profile route checks login state
     profile: (ctx) {
       if (ProfileBackend.instance.currentUser == null) {
-        return LoginPage(redirectTo: profile);
+        return const LoginPage(redirectTo: profile);
       }
       return const ProfilePage();
     },
