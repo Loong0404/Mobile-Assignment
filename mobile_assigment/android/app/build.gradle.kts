@@ -27,7 +27,7 @@ android {
         applicationId = "com.example.mobile_assigment"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = 23  // Updated to meet cloud_firestore requirement
+        minSdk = flutter.minSdkVersion  // Updated to meet cloud_firestore requirement
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
