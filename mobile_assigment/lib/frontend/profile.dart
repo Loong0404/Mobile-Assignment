@@ -1,5 +1,8 @@
-// lib/frontend/profile_page.dart
+// lib/frontend/profile.dart
+// Profile page (clickable avatar + edit name/email/password + vehicles + history)
+
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../backend/profile.dart';
@@ -7,9 +10,14 @@ import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:cloud_firestore/cloud_firestore.dart' as fs;
 import 'package:image_picker/image_picker.dart';
 
-class ProfilePage extends StatelessWidget {
+class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
 
+  @override
+  State<ProfilePage> createState() => _ProfilePageState();
+}
+
+class _ProfilePageState extends State<ProfilePage> {
   // ---- 硬編碼 Service history（倒序） ----
   List<_ServiceHistory> _demoHistory() => [
     _ServiceHistory(
@@ -35,44 +43,53 @@ class ProfilePage extends StatelessWidget {
     ),
   ]..sort((a, b) => b.date.compareTo(a.date));
 
-  // ---- 更換頭像（使用 Base64） ----
-  Future<void> _changePhoto(BuildContext context) async {
+  // ---- 更換頭像（整個頭像可點 + 右上角相機可點） ----
+  Future<void> _changePhoto() async {
     try {
-      final u = fb.FirebaseAuth.instance.currentUser!;
-      final picker = ImagePicker();
+      final authUser = fb.FirebaseAuth.instance.currentUser;
+      if (authUser == null) return;
 
+      final picker = ImagePicker();
       final picked = await picker.pickImage(
         source: ImageSource.gallery,
-        maxWidth: 400,
-        maxHeight: 400,
-        imageQuality: 70,
+        maxWidth: 600,
+        maxHeight: 600,
+        imageQuality: 70, // 壓縮避免 Firestore 單文件 1MB 限制
       );
       if (picked == null) return;
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Processing image...')),
+      );
 
       final bytes = await picked.readAsBytes();
       final base64Image = base64Encode(bytes);
 
       if (base64Image.length > 900000) {
-        if (!context.mounted) return;
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Image is too large. Please choose a smaller image.'),
+            content: Text('Image too large. Please choose a smaller one.'),
             backgroundColor: Colors.red,
           ),
         );
         return;
       }
 
-      await fs.FirebaseFirestore.instance.collection('users').doc(u.uid).set(
+      await fs.FirebaseFirestore.instance
+          .collection('users')
+          .doc(authUser.uid)
+          .set(
         {
-          'photoUrl': null,
+          'photoUrl': null, // 清掉舊的 URL 欄位
           'photoBase64': base64Image,
           'updatedAt': fs.FieldValue.serverTimestamp(),
         },
         fs.SetOptions(merge: true),
       );
 
-      if (!context.mounted) return;
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Profile photo updated'),
@@ -80,10 +97,10 @@ class ProfilePage extends StatelessWidget {
         ),
       );
     } catch (e) {
-      if (!context.mounted) return;
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error updating photo: $e'),
+          content: Text('Failed to update photo: $e'),
           backgroundColor: Colors.red,
         ),
       );
@@ -91,7 +108,7 @@ class ProfilePage extends StatelessWidget {
   }
 
   // ---- 編輯名稱 ----
-  Future<void> _editName(BuildContext context, String initial) async {
+  Future<void> _editName(String initial) async {
     final ctrl = TextEditingController(text: initial);
     final form = GlobalKey<FormState>();
 
@@ -116,12 +133,14 @@ class ProfilePage extends StatelessWidget {
               final name = ctrl.text.trim();
               final u = fb.FirebaseAuth.instance.currentUser!;
               await u.updateDisplayName(name);
-              await fs.FirebaseFirestore.instance
-                  .collection('users')
-                  .doc(u.uid)
-                  .set({'name': name, 'updatedAt': fs.FieldValue.serverTimestamp()},
-                  fs.SetOptions(merge: true));
-              if (context.mounted) Navigator.pop(context);
+              await fs.FirebaseFirestore.instance.collection('users').doc(u.uid).set(
+                {
+                  'name': name,
+                  'updatedAt': fs.FieldValue.serverTimestamp(),
+                },
+                fs.SetOptions(merge: true),
+              );
+              if (mounted) Navigator.pop(context);
             },
             child: const Text('Save'),
           ),
@@ -130,8 +149,8 @@ class ProfilePage extends StatelessWidget {
     );
   }
 
-  // ---- reauth ----
-  Future<bool> _reauth(BuildContext context, String email) async {
+  // ---- 通用 reauth ----
+  Future<bool> _reauth(String email) async {
     final pwdCtrl = TextEditingController();
     final ok = await showDialog<bool>(
       context: context,
@@ -149,13 +168,14 @@ class ProfilePage extends StatelessWidget {
       ),
     );
     if (ok != true) return false;
+
     try {
       final cred =
       fb.EmailAuthProvider.credential(email: email, password: pwdCtrl.text);
       await fb.FirebaseAuth.instance.currentUser!.reauthenticateWithCredential(cred);
       return true;
     } on fb.FirebaseAuthException catch (e) {
-      if (context.mounted) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(e.message ?? 'Reauth failed')),
         );
@@ -165,7 +185,7 @@ class ProfilePage extends StatelessWidget {
   }
 
   // ---- 編輯 Email ----
-  Future<void> _editEmail(BuildContext context, String currentEmail) async {
+  Future<void> _editEmail(String currentEmail) async {
     final emailCtrl = TextEditingController(text: currentEmail);
     final form = GlobalKey<FormState>();
 
@@ -193,24 +213,16 @@ class ProfilePage extends StatelessWidget {
               if (!(form.currentState?.validate() ?? false)) return;
               final user = fb.FirebaseAuth.instance.currentUser!;
               final newEmail = emailCtrl.text.trim();
-              if (!await _reauth(context, user.email ?? '')) return;
-
+              if (!await _reauth(user.email ?? '')) return;
               await user.verifyBeforeUpdateEmail(newEmail);
-              await fs.FirebaseFirestore.instance
-                  .collection('users')
-                  .doc(user.uid)
-                  .set(
-                {'email': newEmail, 'updatedAt': fs.FieldValue.serverTimestamp()},
+              await fs.FirebaseFirestore.instance.collection('users').doc(user.uid).set(
+                {
+                  'email': newEmail,
+                  'updatedAt': fs.FieldValue.serverTimestamp(),
+                },
                 fs.SetOptions(merge: true),
               );
-              if (context.mounted) Navigator.pop(context);
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Verification email sent. Please confirm to complete update.'),
-                  ),
-                );
-              }
+              if (mounted) Navigator.pop(context);
             },
             child: const Text('Save'),
           ),
@@ -220,7 +232,7 @@ class ProfilePage extends StatelessWidget {
   }
 
   // ---- 修改密碼 ----
-  Future<void> _changePassword(BuildContext context, String email) async {
+  Future<void> _changePassword(String email) async {
     final currentCtrl = TextEditingController();
     final newCtrl = TextEditingController();
     final form = GlobalKey<FormState>();
@@ -245,8 +257,7 @@ class ProfilePage extends StatelessWidget {
               TextFormField(
                 controller: newCtrl,
                 obscureText: true,
-                decoration:
-                const InputDecoration(labelText: 'New password (min 6 chars)'),
+                decoration: const InputDecoration(labelText: 'New password (min 6 chars)'),
                 validator: (v) =>
                 (v == null || v.length < 6) ? 'At least 6 characters' : null,
               ),
@@ -266,14 +277,14 @@ class ProfilePage extends StatelessWidget {
                 final user = fb.FirebaseAuth.instance.currentUser!;
                 await user.reauthenticateWithCredential(cred);
                 await user.updatePassword(newCtrl.text);
-                if (context.mounted) Navigator.pop(context);
-                if (context.mounted) {
+                if (mounted) Navigator.pop(context);
+                if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Password updated')),
                   );
                 }
               } on fb.FirebaseAuthException catch (e) {
-                if (context.mounted) {
+                if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text(e.message ?? 'Failed to update')),
                   );
@@ -288,12 +299,11 @@ class ProfilePage extends StatelessWidget {
   }
 
   // ---- 新增/編輯 Vehicle ----
-  Future<void> _editVehicle(
-      BuildContext context, {
-        String? docId,
-        String? plate,
-        String? brand,
-      }) async {
+  Future<void> _editVehicle({
+    String? docId,
+    String? plate,
+    String? brand,
+  }) async {
     final uid = ProfileBackend.instance.currentUser!.id;
     final userId = ProfileBackend.instance.currentUser!.userId;
     final plateCtrl = TextEditingController(text: plate ?? '');
@@ -318,9 +328,8 @@ class ProfilePage extends StatelessWidget {
               const SizedBox(height: 8),
               TextFormField(
                 controller: brandCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Brand (e.g., Toyota, Honda)',
-                ),
+                decoration:
+                const InputDecoration(labelText: 'Brand (e.g., Toyota, Honda)'),
                 validator: (v) =>
                 (v == null || v.trim().isEmpty) ? 'Enter brand' : null,
               ),
@@ -335,7 +344,7 @@ class ProfilePage extends StatelessWidget {
                     .collection('vehicle')
                     .doc(docId)
                     .delete();
-                if (context.mounted) Navigator.pop(context);
+                if (mounted) Navigator.pop(context);
               },
               child: const Text('Delete', style: TextStyle(color: Colors.red)),
             ),
@@ -361,7 +370,7 @@ class ProfilePage extends StatelessWidget {
                     .doc(docId)
                     .set(data, fs.SetOptions(merge: true));
               }
-              if (context.mounted) Navigator.pop(context);
+              if (mounted) Navigator.pop(context);
             },
             child: const Text('Save'),
           ),
@@ -415,48 +424,84 @@ class ProfilePage extends StatelessWidget {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              // ===== Header: Avatar + Name/Email =====
+              // ===== Header: Avatar（可點擊） + Name/Email/UserId =====
               Card(
                 elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Row(
                     children: [
+                      // 以 Stack 疊加小相機按鈕；整個頭像與相機都可點
                       StreamBuilder<fs.DocumentSnapshot>(
                         stream: fs.FirebaseFirestore.instance
                             .collection('users')
                             .doc(uid)
                             .snapshots(),
                         builder: (context, snapshot) {
-                          if (!snapshot.hasData) {
-                            return const CircleAvatar(
-                              radius: 34,
-                              child: Icon(Icons.person, size: 34),
-                            );
+                          String? base64Image;
+                          if (snapshot.hasData) {
+                            final data =
+                            snapshot.data!.data() as Map<String, dynamic>?;
+                            base64Image = data?['photoBase64'] as String?;
                           }
-                          final data =
-                          snapshot.data!.data() as Map<String, dynamic>?;
-                          final base64Image = data?['photoBase64'] as String?;
+
+                          Widget avatar;
                           if (base64Image == null || base64Image.isEmpty) {
-                            return const CircleAvatar(
-                              radius: 34,
+                            avatar = const CircleAvatar(
+                              radius: 38,
                               child: Icon(Icons.person, size: 34),
                             );
+                          } else {
+                            try {
+                              avatar = CircleAvatar(
+                                radius: 38,
+                                backgroundImage: MemoryImage(
+                                  base64Decode(base64Image),
+                                ),
+                              );
+                            } catch (_) {
+                              avatar = const CircleAvatar(
+                                radius: 38,
+                                child: Icon(Icons.person, size: 34),
+                              );
+                            }
                           }
-                          try {
-                            return CircleAvatar(
-                              radius: 34,
-                              backgroundImage: MemoryImage(
-                                base64Decode(base64Image),
+
+                          return Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              // 整個頭像可點
+                              InkWell(
+                                onTap: _changePhoto,
+                                borderRadius: BorderRadius.circular(44),
+                                child: avatar,
                               ),
-                            );
-                          } catch (_) {
-                            return const CircleAvatar(
-                              radius: 34,
-                              child: Icon(Icons.person, size: 34),
-                            );
-                          }
+                              // 右下角小相機
+                              Positioned(
+                                right: -2,
+                                bottom: -2,
+                                child: Material(
+                                  color: Colors.white,
+                                  shape: const CircleBorder(),
+                                  elevation: 2,
+                                  child: InkWell(
+                                    onTap: _changePhoto,
+                                    customBorder: const CircleBorder(),
+                                    child: const Padding(
+                                      padding: EdgeInsets.all(6),
+                                      child: Icon(
+                                        Icons.photo_camera_outlined,
+                                        size: 18,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
                         },
                       ),
                       const SizedBox(width: 16),
@@ -476,11 +521,6 @@ class ProfilePage extends StatelessWidget {
                           ],
                         ),
                       ),
-                      IconButton(
-                        tooltip: 'Change photo',
-                        onPressed: () => _changePhoto(context),
-                        icon: const Icon(Icons.photo_camera_outlined),
-                      ),
                     ],
                   ),
                 ),
@@ -490,7 +530,9 @@ class ProfilePage extends StatelessWidget {
               // ===== Editable rows: Name / Email / Password =====
               Card(
                 elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
                 child: Column(
                   children: [
                     ListTile(
@@ -498,7 +540,7 @@ class ProfilePage extends StatelessWidget {
                       title: const Text('Name'),
                       subtitle: Text(name),
                       trailing: TextButton.icon(
-                        onPressed: () => _editName(context, name),
+                        onPressed: () => _editName(name),
                         icon: const Icon(Icons.edit, size: 18),
                         label: const Text('Edit'),
                       ),
@@ -509,7 +551,7 @@ class ProfilePage extends StatelessWidget {
                       title: const Text('Email'),
                       subtitle: Text(email),
                       trailing: TextButton.icon(
-                        onPressed: () => _editEmail(context, email),
+                        onPressed: () => _editEmail(email),
                         icon: const Icon(Icons.edit, size: 18),
                         label: const Text('Edit'),
                       ),
@@ -520,7 +562,7 @@ class ProfilePage extends StatelessWidget {
                       title: const Text('Password'),
                       subtitle: const Text('Change your password'),
                       trailing: TextButton.icon(
-                        onPressed: () => _changePassword(context, email),
+                        onPressed: () => _changePassword(email),
                         icon: const Icon(Icons.edit, size: 18),
                         label: const Text('Change'),
                       ),
@@ -533,7 +575,9 @@ class ProfilePage extends StatelessWidget {
               // ===== Vehicles =====
               Card(
                 elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                   child: Column(
@@ -542,11 +586,13 @@ class ProfilePage extends StatelessWidget {
                       Row(
                         children: [
                           const Expanded(
-                            child: Text('Vehicles',
-                                style: TextStyle(fontWeight: FontWeight.w600)),
+                            child: Text(
+                              'Vehicles',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
                           ),
                           TextButton.icon(
-                            onPressed: () => _editVehicle(context),
+                            onPressed: () => _editVehicle(),
                             icon: const Icon(Icons.add),
                             label: const Text('Add'),
                           ),
@@ -598,13 +644,11 @@ class ProfilePage extends StatelessWidget {
                               return ListTile(
                                 dense: true,
                                 contentPadding: EdgeInsets.zero,
-                                leading:
-                                const Icon(Icons.directions_car_outlined),
+                                leading: const Icon(Icons.directions_car_outlined),
                                 title: Text(plate),
                                 subtitle: Text(brand),
                                 trailing: TextButton.icon(
                                   onPressed: () => _editVehicle(
-                                    context,
                                     docId: d.id,
                                     plate: plate,
                                     brand: brand,
@@ -626,19 +670,23 @@ class ProfilePage extends StatelessWidget {
               // ===== Estimated next service =====
               Card(
                 elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
                 child: ListTile(
                   leading: const Icon(Icons.schedule),
                   title: const Text('Estimated time for next service'),
                   subtitle: Text(nextServiceText()),
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 12),
 
-              // ===== Service history（hard-coded）=====
+              // ===== Service history (hardcoded) =====
               Card(
                 elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                   child: Column(
@@ -657,14 +705,11 @@ class ProfilePage extends StatelessWidget {
                           return ListTile(
                             dense: true,
                             contentPadding: EdgeInsets.zero,
-                            leading:
-                            const Icon(Icons.build_circle_outlined),
+                            leading: const Icon(Icons.build_circle_outlined),
                             title: Text(h.type),
-                            subtitle: Text(
-                              '${humanDate(h.date)} • ${h.workshop} • ${h.mileage} km',
-                            ),
-                            trailing:
-                            Text('RM ${h.amount.toStringAsFixed(2)}'),
+                            subtitle:
+                            Text('${humanDate(h.date)} • ${h.workshop} • ${h.mileage} km'),
+                            trailing: Text('RM ${h.amount.toStringAsFixed(2)}'),
                           );
                         },
                       ),
@@ -674,11 +719,12 @@ class ProfilePage extends StatelessWidget {
               ),
               const SizedBox(height: 24),
 
+              // ===== Sign out =====
               Center(
                 child: ElevatedButton(
                   onPressed: () async {
                     await ProfileBackend.instance.signOut();
-                    if (context.mounted) Navigator.pop(context);
+                    if (mounted) Navigator.pop(context);
                   },
                   child: const Text('Sign out'),
                 ),
