@@ -2,7 +2,6 @@
 // Profile page (clickable avatar + edit name/email/password + vehicles + history)
 
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../backend/profile.dart';
@@ -59,9 +58,9 @@ class _ProfilePageState extends State<ProfilePage> {
       if (picked == null) return;
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Processing image...')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Processing image...')));
 
       final bytes = await picked.readAsBytes();
       final base64Image = base64Encode(bytes);
@@ -80,14 +79,11 @@ class _ProfilePageState extends State<ProfilePage> {
       await fs.FirebaseFirestore.instance
           .collection('users')
           .doc(authUser.uid)
-          .set(
-        {
-          'photoUrl': null, // 清掉舊的 URL 欄位
-          'photoBase64': base64Image,
-          'updatedAt': fs.FieldValue.serverTimestamp(),
-        },
-        fs.SetOptions(merge: true),
-      );
+          .set({
+            'photoUrl': null, // 清掉舊的 URL 欄位
+            'photoBase64': base64Image,
+            'updatedAt': fs.FieldValue.serverTimestamp(),
+          }, fs.SetOptions(merge: true));
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -121,25 +117,29 @@ class _ProfilePageState extends State<ProfilePage> {
           child: TextFormField(
             controller: ctrl,
             decoration: const InputDecoration(labelText: 'Full name'),
-            validator: (v) =>
-            (v == null || v.trim().isEmpty) ? 'Please enter your name' : null,
+            validator: (v) => (v == null || v.trim().isEmpty)
+                ? 'Please enter your name'
+                : null,
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
             onPressed: () async {
               if (!(form.currentState?.validate() ?? false)) return;
               final name = ctrl.text.trim();
               final u = fb.FirebaseAuth.instance.currentUser!;
               await u.updateDisplayName(name);
-              await fs.FirebaseFirestore.instance.collection('users').doc(u.uid).set(
-                {
-                  'name': name,
-                  'updatedAt': fs.FieldValue.serverTimestamp(),
-                },
-                fs.SetOptions(merge: true),
-              );
+              await fs.FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(u.uid)
+                  .set({
+                    'name': name,
+                    'updatedAt': fs.FieldValue.serverTimestamp(),
+                  }, fs.SetOptions(merge: true));
               if (mounted) Navigator.pop(context);
             },
             child: const Text('Save'),
@@ -162,23 +162,33 @@ class _ProfilePageState extends State<ProfilePage> {
           decoration: const InputDecoration(labelText: 'Current password'),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Continue')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Continue'),
+          ),
         ],
       ),
     );
     if (ok != true) return false;
 
     try {
-      final cred =
-      fb.EmailAuthProvider.credential(email: email, password: pwdCtrl.text);
-      await fb.FirebaseAuth.instance.currentUser!.reauthenticateWithCredential(cred);
+      final cred = fb.EmailAuthProvider.credential(
+        email: email,
+        password: pwdCtrl.text,
+      );
+      await fb.FirebaseAuth.instance.currentUser!.reauthenticateWithCredential(
+        cred,
+      );
       return true;
     } on fb.FirebaseAuthException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message ?? 'Reauth failed')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message ?? 'Reauth failed')));
       }
       return false;
     }
@@ -207,7 +217,10 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
             onPressed: () async {
               if (!(form.currentState?.validate() ?? false)) return;
@@ -215,13 +228,13 @@ class _ProfilePageState extends State<ProfilePage> {
               final newEmail = emailCtrl.text.trim();
               if (!await _reauth(user.email ?? '')) return;
               await user.verifyBeforeUpdateEmail(newEmail);
-              await fs.FirebaseFirestore.instance.collection('users').doc(user.uid).set(
-                {
-                  'email': newEmail,
-                  'updatedAt': fs.FieldValue.serverTimestamp(),
-                },
-                fs.SetOptions(merge: true),
-              );
+              await fs.FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(user.uid)
+                  .set({
+                    'email': newEmail,
+                    'updatedAt': fs.FieldValue.serverTimestamp(),
+                  }, fs.SetOptions(merge: true));
               if (mounted) Navigator.pop(context);
             },
             child: const Text('Save'),
@@ -249,23 +262,31 @@ class _ProfilePageState extends State<ProfilePage> {
               TextFormField(
                 controller: currentCtrl,
                 obscureText: true,
-                decoration: const InputDecoration(labelText: 'Current password'),
+                decoration: const InputDecoration(
+                  labelText: 'Current password',
+                ),
                 validator: (v) =>
-                (v == null || v.isEmpty) ? 'Enter current password' : null,
+                    (v == null || v.isEmpty) ? 'Enter current password' : null,
               ),
               const SizedBox(height: 8),
               TextFormField(
                 controller: newCtrl,
                 obscureText: true,
-                decoration: const InputDecoration(labelText: 'New password (min 6 chars)'),
-                validator: (v) =>
-                (v == null || v.length < 6) ? 'At least 6 characters' : null,
+                decoration: const InputDecoration(
+                  labelText: 'New password (min 6 chars)',
+                ),
+                validator: (v) => (v == null || v.length < 6)
+                    ? 'At least 6 characters'
+                    : null,
               ),
             ],
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
             onPressed: () async {
               if (!(form.currentState?.validate() ?? false)) return;
@@ -322,16 +343,18 @@ class _ProfilePageState extends State<ProfilePage> {
               TextFormField(
                 controller: plateCtrl,
                 decoration: const InputDecoration(labelText: 'Plate number'),
-                validator: (v) =>
-                (v == null || v.trim().isEmpty) ? 'Enter plate number' : null,
+                validator: (v) => (v == null || v.trim().isEmpty)
+                    ? 'Enter plate number'
+                    : null,
               ),
               const SizedBox(height: 8),
               TextFormField(
                 controller: brandCtrl,
-                decoration:
-                const InputDecoration(labelText: 'Brand (e.g., Toyota, Honda)'),
+                decoration: const InputDecoration(
+                  labelText: 'Brand (e.g., Toyota, Honda)',
+                ),
                 validator: (v) =>
-                (v == null || v.trim().isEmpty) ? 'Enter brand' : null,
+                    (v == null || v.trim().isEmpty) ? 'Enter brand' : null,
               ),
             ],
           ),
@@ -348,7 +371,10 @@ class _ProfilePageState extends State<ProfilePage> {
               },
               child: const Text('Delete', style: TextStyle(color: Colors.red)),
             ),
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
             onPressed: () async {
               if (!(form.currentState?.validate() ?? false)) return;
@@ -391,8 +417,10 @@ class _ProfilePageState extends State<ProfilePage> {
     }
 
     final uid = backendUser.id;
-    final userDocStream =
-    fs.FirebaseFirestore.instance.collection('users').doc(uid).snapshots();
+    final userDocStream = fs.FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .snapshots();
 
     final vehiclesStream = fs.FirebaseFirestore.instance
         .collection('vehicle')
@@ -444,7 +472,7 @@ class _ProfilePageState extends State<ProfilePage> {
                           String? base64Image;
                           if (snapshot.hasData) {
                             final data =
-                            snapshot.data!.data() as Map<String, dynamic>?;
+                                snapshot.data!.data() as Map<String, dynamic>?;
                             base64Image = data?['photoBase64'] as String?;
                           }
 
@@ -517,7 +545,10 @@ class _ProfilePageState extends State<ProfilePage> {
                               ),
                             ),
                             const SizedBox(height: 4),
-                            Text(email, style: const TextStyle(color: Colors.black54)),
+                            Text(
+                              email,
+                              style: const TextStyle(color: Colors.black54),
+                            ),
                           ],
                         ),
                       ),
@@ -624,7 +655,9 @@ class _ProfilePageState extends State<ProfilePage> {
                             if (ta == null && tb == null) return 0;
                             if (ta == null) return 1;
                             if (tb == null) return -1;
-                            return (tb as fs.Timestamp).compareTo(ta as fs.Timestamp);
+                            return (tb as fs.Timestamp).compareTo(
+                              ta as fs.Timestamp,
+                            );
                           });
                           if (docs.isEmpty) {
                             return const Padding(
@@ -633,7 +666,8 @@ class _ProfilePageState extends State<ProfilePage> {
                             );
                           }
                           return ListView.separated(
-                            separatorBuilder: (_, __) => const Divider(height: 1),
+                            separatorBuilder: (_, __) =>
+                                const Divider(height: 1),
                             shrinkWrap: true,
                             physics: const NeverScrollableScrollPhysics(),
                             itemCount: docs.length,
@@ -644,7 +678,9 @@ class _ProfilePageState extends State<ProfilePage> {
                               return ListTile(
                                 dense: true,
                                 contentPadding: EdgeInsets.zero,
-                                leading: const Icon(Icons.directions_car_outlined),
+                                leading: const Icon(
+                                  Icons.directions_car_outlined,
+                                ),
                                 title: Text(plate),
                                 subtitle: Text(brand),
                                 trailing: TextButton.icon(
@@ -692,8 +728,10 @@ class _ProfilePageState extends State<ProfilePage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Service history',
-                          style: TextStyle(fontWeight: FontWeight.w600)),
+                      const Text(
+                        'Service history',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
                       const SizedBox(height: 8),
                       ListView.separated(
                         separatorBuilder: (_, __) => const Divider(height: 1),
@@ -707,8 +745,9 @@ class _ProfilePageState extends State<ProfilePage> {
                             contentPadding: EdgeInsets.zero,
                             leading: const Icon(Icons.build_circle_outlined),
                             title: Text(h.type),
-                            subtitle:
-                            Text('${humanDate(h.date)} • ${h.workshop} • ${h.mileage} km'),
+                            subtitle: Text(
+                              '${humanDate(h.date)} • ${h.workshop} • ${h.mileage} km',
+                            ),
                             trailing: Text('RM ${h.amount.toStringAsFixed(2)}'),
                           );
                         },

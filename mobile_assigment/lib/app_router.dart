@@ -7,6 +7,7 @@ import 'frontend/profile.dart'; // 仅 ProfilePage
 import 'backend/profile.dart';
 import 'frontend/billing_pages.dart';
 import 'frontend/feedback_pages.dart';
+import 'frontend/tracking.dart';
 
 class AppRouter {
   static const login = '/login';
@@ -24,6 +25,7 @@ class AppRouter {
     login: (ctx) => const LoginPage(),
     register: (ctx) => const RegisterPage(),
     home: (ctx) => const HomePage(),
+    tracking: (ctx) => const TrackingPage(),
     billing: (ctx) => const BillingListPage(),
     feedback: (ctx) => const FeedbackListPage(),
     profile: (ctx) {

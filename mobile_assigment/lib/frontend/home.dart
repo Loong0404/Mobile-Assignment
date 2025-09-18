@@ -393,7 +393,13 @@ class _HomePageState extends State<HomePage> {
   }) {
     final iconColor = color ?? Colors.blue;
     return GestureDetector(
-      onTap: () => Navigator.pushNamed(context, route),
+      onTap: () {
+        if (route == AppRouter.tracking) {
+          Navigator.pushNamed(context, AppRouter.tracking);
+        } else {
+          Navigator.pushNamed(context, route);
+        }
+      },
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
