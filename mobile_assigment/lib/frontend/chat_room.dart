@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-
+import 'package:geolocator/geolocator.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/services.dart';
 import '../main.dart';
 import '../backend/tracking.dart';
 import '../backend/tracking_service.dart';
@@ -185,7 +187,70 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
     });
   }
 
-  // Location sharing removed
+  // Send current location as a Google Maps link
+  Future<void> _sendCurrentLocation() async {
+    try {
+      // Ensure device location services are enabled
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Location services are disabled')),
+        );
+        await Geolocator.openLocationSettings();
+        return;
+      }
+      // Check and request permissions
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.deniedForever ||
+          permission == LocationPermission.denied) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Location permission denied')),
+        );
+        return;
+      }
+
+      // Get current position
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      final lat = pos.latitude.toStringAsFixed(6);
+      final lng = pos.longitude.toStringAsFixed(6);
+      final mapsUrl = 'https://www.google.com/maps?q=$lat,$lng';
+
+      // Try to launch maps link locally (optional UX)
+      final uri = Uri.parse(mapsUrl);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+
+      // Send the link message to chat
+      ChatService.instance.sendMessage(
+        trackId: widget.trackId,
+        text: 'My current location: $mapsUrl',
+        displayName: (prof.ProfileBackend.instance.currentUser?.name ?? 'You'),
+        userId: (prof.ProfileBackend.instance.currentUser?.userId ?? ''),
+      );
+    } on PlatformException catch (e) {
+      if (e.code.toLowerCase().contains('missing')) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Plugin not registered. Fully restart the app.'),
+          ),
+        );
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to share location: ${e.message}')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to share location: $e')));
+    }
+  }
 
   // Simulate technician response
   // technician replies are expected from backend updates
@@ -358,7 +423,12 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
                         onPressed: _showAttachmentOptions,
                       ),
 
-                      // Location sharing removed
+                      // Send location button
+                      IconButton(
+                        icon: Icon(Icons.my_location, color: Colors.grey[600]),
+                        tooltip: 'Send current location',
+                        onPressed: _sendCurrentLocation,
+                      ),
 
                       // Camera quick access removed (use Attach Media)
 
