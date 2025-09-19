@@ -65,7 +65,6 @@ class BillingService {
     ).toMap());
   }
 
-  /// Safer stream: no Firestore orderBy; we sort in Dart
   Stream<List<InvoiceModel>> watchUserInvoicesSafe(String userId) {
     return _col
         .where('userId', isEqualTo: userId)

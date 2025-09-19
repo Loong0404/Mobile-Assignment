@@ -26,7 +26,6 @@ class BillingListPage extends StatelessWidget {
                 bookingID: 'BKG-1234',
                 plateNumber: 'VBA1234',
               );
-              // ignore: use_build_context_synchronously
               ScaffoldMessenger.of(
                 context,
               ).showSnackBar(SnackBar(content: Text('Invoice $id created')));
@@ -61,7 +60,6 @@ class BillingListPage extends StatelessWidget {
                 subtitle: Text(_ymd(inv.date)),
                 trailing: Chip(
                   label: Text(inv.status),
-                  // ignore: deprecated_member_use
                   backgroundColor: color.withOpacity(.1),
                   labelStyle: TextStyle(color: color),
                   side: BorderSide(color: color),
@@ -144,7 +142,6 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
                   alignment: Alignment.centerLeft,
                   child: Chip(
                     label: Text(i.status),
-                    // ignore: deprecated_member_use
                     backgroundColor: color.withOpacity(.1),
                     labelStyle: TextStyle(color: color),
                     side: BorderSide(color: color),
