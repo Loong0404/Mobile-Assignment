@@ -17,7 +17,6 @@ class StageDetailsPage extends StatelessWidget {
     required this.tracking,
   });
 
-  // Format duration to a human-readable string
   String _formatDuration(Duration duration) {
     if (duration.inDays > 0) {
       return '${duration.inDays} day${duration.inDays > 1 ? "s" : ""} ${duration.inHours % 24} hr${duration.inHours % 24 != 1 ? "s" : ""}';
@@ -308,18 +307,55 @@ class StageDetailsPage extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.grey[50],
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.grey[200]!),
-                        ),
-                        child: Text(
-                          update.notes,
-                          style: const TextStyle(fontSize: 16, height: 1.5),
-                        ),
+                      Builder(
+                        builder: (context) {
+                          final lines = <String>[];
+                          final ids = tracking.serviceIds ?? const <String>[];
+                          final types =
+                              tracking.serviceTypes ?? const <String>[];
+                          if (ids.isNotEmpty) {
+                            for (var i = 0; i < ids.length; i++) {
+                              final id = ids[i];
+                              final type = (i < types.length)
+                                  ? types[i].toString()
+                                  : '';
+                              final label = [
+                                id,
+                                if (type.isNotEmpty) type,
+                              ].join(' • ');
+                              lines.add('- $label');
+                            }
+                          } else {
+                            final id = tracking.serviceId ?? '';
+                            final type = tracking.serviceType ?? '';
+                            final label = [
+                              if (id.isNotEmpty) id,
+                              if (type.isNotEmpty) type,
+                            ].join(' • ');
+                            if (label.isNotEmpty) lines.add('- $label');
+                          }
+
+                          final enrichedNotes = [
+                            update.notes.trim(),
+                            if (lines.isNotEmpty) '',
+                            if (lines.isNotEmpty) 'Selected services:',
+                            ...lines,
+                          ].join('\n');
+
+                          return Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[50],
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: Colors.grey[200]!),
+                            ),
+                            child: Text(
+                              enrichedNotes,
+                              style: const TextStyle(fontSize: 16, height: 1.5),
+                            ),
+                          );
+                        },
                       ),
                     ],
                   ),
