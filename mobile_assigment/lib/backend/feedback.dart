@@ -3,7 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class FeedbackModel {
   final String feedbackID;
   final String invoiceID;
-  final int rating; // 1..5
+  final int rating; // 1 to 5
   final String comment;
   final DateTime date;
   final String userId;

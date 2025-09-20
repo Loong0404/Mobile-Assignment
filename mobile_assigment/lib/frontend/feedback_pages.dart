@@ -1,10 +1,8 @@
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-
 import '../backend/billing.dart';
 import '../backend/feedback.dart';
 
@@ -81,7 +79,7 @@ class _FeedbackDetailPageState extends State<FeedbackDetailPage> {
   int rating = 5;
   final commentCtrl = TextEditingController();
   String? existingPhotoUrl;
-  String? uploadedPhotoUrl; // new photo uploaded in this session
+  String? uploadedPhotoUrl; // image will be uploaded here
   bool loading = true;
   bool saving = false;
   String? error;

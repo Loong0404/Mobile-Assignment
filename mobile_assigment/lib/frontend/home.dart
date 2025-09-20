@@ -1,6 +1,11 @@
+// lib/frontend/home.dart
 import 'dart:async';
-import 'package:flutter/material.dart';
+import 'dart:convert'; // for base64Decode
+
+import 'package:cloud_firestore/cloud_firestore.dart' as fs;
 import 'package:firebase_auth/firebase_auth.dart' as fb;
+import 'package:flutter/material.dart';
+
 import '../app_router.dart';
 import '../backend/profile.dart';
 import '../main.dart';
@@ -22,16 +27,15 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
 
-    // Listen to authentication state changes
+    // Listen to auth changes so the header (name/avatar) updates immediately
     _authSubscription = fb.FirebaseAuth.instance.authStateChanges().listen((_) {
-      if (mounted) {
-        setState(() {});
-        // Check notifications when auth state changes
-        WmsNotification.checkNextServiceReminder(context);
-      }
+      if (!mounted) return;
+      setState(() {}); // rebuild to reflect new auth state
+      // Also re-check next-service reminder when auth switches
+      WmsNotification.checkNextServiceReminder(context);
     });
 
-    // Update greeting every minute
+    // Rebuild greeting every minute so it stays fresh
     _timer = Timer.periodic(const Duration(minutes: 1), (_) {
       if (mounted) setState(() {});
     });
@@ -45,21 +49,17 @@ class _HomePageState extends State<HomePage> {
   }
 
   String _getGreeting() {
-    final now = DateTime.now();
-    final hour = now.hour;
-    if (hour < 12) {
-      return 'Good Morning';
-    } else if (hour < 17) {
-      return 'Good Afternoon';
-    } else {
-      return 'Good Evening';
-    }
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Good Morning';
+    if (hour < 17) return 'Good Afternoon';
+    return 'Good Evening';
   }
 
   @override
   Widget build(BuildContext context) {
-    // Get current user and force refresh on auth state change
-    final user = ProfileBackend.instance.currentUser;
+    // Read current Firebase user and cached backend user
+    final fbUser = fb.FirebaseAuth.instance.currentUser;
+    final cachedUser = ProfileBackend.instance.currentUser;
 
     return Scaffold(
       body: SafeArea(
@@ -80,24 +80,13 @@ class _HomePageState extends State<HomePage> {
                   children: [
                     Row(
                       children: [
-                        Container(
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 2),
-                          ),
-                          child: CircleAvatar(
-                            backgroundColor: Colors.white,
-                            child: Text(
-                              user?.name.substring(0, 1).toUpperCase() ?? '?',
-                              style: TextStyle(
-                                color: WmsApp.grabGreen,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 18,
-                              ),
-                            ),
-                          ),
+                        // Avatar synced with Firestore (photoBase64)
+                        _HeaderAvatar(
+                          fbUser: fbUser,
+                          fallbackName: cachedUser?.name,
                         ),
                         const SizedBox(width: 12),
+                        // Greeting + display name (Guest if signed out)
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -112,7 +101,9 @@ class _HomePageState extends State<HomePage> {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                user?.name ?? 'Guest',
+                                fbUser == null
+                                    ? 'Guest'
+                                    : (cachedUser?.name ?? 'User'),
                                 style: const TextStyle(
                                   fontSize: 20,
                                   color: Colors.white,
@@ -122,9 +113,9 @@ class _HomePageState extends State<HomePage> {
                             ],
                           ),
                         ),
+                        // Right action chips (profile, notifications)
                         Container(
                           decoration: BoxDecoration(
-                            // ignore: deprecated_member_use
                             color: Colors.white.withOpacity(0.2),
                             borderRadius: BorderRadius.circular(32),
                           ),
@@ -154,7 +145,7 @@ class _HomePageState extends State<HomePage> {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (context) =>
+                                      builder: (_) =>
                                           const NotificationHistoryPage(),
                                     ),
                                   );
@@ -171,6 +162,7 @@ class _HomePageState extends State<HomePage> {
             ),
 
             // ── Main Services Grid ───────────────────────────────────────────────
+            // Removed "Appointments" as requested
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
               sliver: SliverGrid(
@@ -181,12 +173,6 @@ class _HomePageState extends State<HomePage> {
                   childAspectRatio: 0.75,
                 ),
                 delegate: SliverChildListDelegate([
-                  _buildServiceItem(
-                    Icons.calendar_month_rounded,
-                    'Appointments',
-                    AppRouter.appointments,
-                    color: const Color(0xFF1DC973), // Grab green
-                  ),
                   _buildServiceItem(
                     Icons.bookmark_rounded,
                     'Booking',
@@ -232,13 +218,12 @@ class _HomePageState extends State<HomePage> {
                             end: Alignment.bottomRight,
                             colors: [
                               WmsApp.grabGreen,
-                              // ignore: deprecated_member_use
                               WmsApp.grabGreen.withOpacity(0.8),
                             ],
                           ),
                         ),
                       ),
-                      // Decorative circle (simplified)
+                      // Decorative circle
                       Positioned(
                         right: -20,
                         top: -20,
@@ -247,7 +232,6 @@ class _HomePageState extends State<HomePage> {
                           height: 80,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            // ignore: deprecated_member_use
                             color: Colors.white.withOpacity(0.1),
                           ),
                         ),
@@ -301,9 +285,7 @@ class _HomePageState extends State<HomePage> {
                               ),
                             ),
                             TextButton(
-                              onPressed: () {
-                                // Handle offer button tap
-                              },
+                              onPressed: () {},
                               style: TextButton.styleFrom(
                                 backgroundColor: Colors.white,
                                 foregroundColor: WmsApp.grabGreen,
@@ -329,7 +311,7 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
 
-            // ── Recent Activities (mock) ────────────────────────────────────────
+            // ── Recent Bookings (mock) ──────────────────────────────────────────
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               sliver: SliverToBoxAdapter(
@@ -394,6 +376,7 @@ class _HomePageState extends State<HomePage> {
     final iconColor = color ?? Colors.blue;
     return GestureDetector(
       onTap: () {
+        // Keep dedicated nav for tracking if needed; others push by route
         if (route == AppRouter.tracking) {
           Navigator.pushNamed(context, AppRouter.tracking);
         } else {
@@ -406,10 +389,8 @@ class _HomePageState extends State<HomePage> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              // ignore: deprecated_member_use
               color: iconColor.withOpacity(0.1),
               borderRadius: BorderRadius.circular(12),
-              // ignore: deprecated_member_use
               border: Border.all(color: iconColor.withOpacity(0.2), width: 1),
             ),
             child: Icon(icon, color: iconColor, size: 24),
@@ -425,6 +406,98 @@ class _HomePageState extends State<HomePage> {
             textAlign: TextAlign.center,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Small header avatar that listens to Firestore for user's base64 photo.
+/// Falls back to the first letter of the display name; if signed out, shows a generic icon.
+class _HeaderAvatar extends StatelessWidget {
+  final fb.User? fbUser;
+  final String? fallbackName;
+
+  const _HeaderAvatar({required this.fbUser, required this.fallbackName});
+
+  @override
+  Widget build(BuildContext context) {
+    // If signed out, just render a default avatar
+    if (fbUser == null) {
+      return _circleWithChild(
+        context,
+        const Icon(Icons.person, color: Colors.white),
+      );
+    }
+
+    // Otherwise stream the user's Firestore doc to get the latest photo/name
+    final uid = fbUser!.uid;
+    final stream = fs.FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .snapshots();
+
+    return StreamBuilder<fs.DocumentSnapshot<Map<String, dynamic>>>(
+      stream: stream,
+      builder: (context, snap) {
+        ImageProvider? provider;
+        String? name = fallbackName;
+
+        if (snap.hasData) {
+          final data = snap.data!.data();
+          if (data != null) {
+            name = (data['name'] as String?) ?? name;
+            final b64 = data['photoBase64'] as String?;
+            if (b64 != null && b64.isNotEmpty) {
+              try {
+                provider = MemoryImage(base64Decode(b64));
+              } catch (_) {
+                provider = null;
+              }
+            }
+          }
+        }
+
+        if (provider != null) {
+          return Container(
+            padding: const EdgeInsets.all(2),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+            ),
+            child: CircleAvatar(radius: 20, backgroundImage: provider),
+          );
+        }
+
+        // Fallback to name initial if no photo
+        final initial = (name ?? 'U').isNotEmpty
+            ? name!.substring(0, 1).toUpperCase()
+            : 'U';
+        return _circleWithChild(
+          context,
+          Text(
+            initial,
+            style: TextStyle(
+              color: WmsApp.grabGreen,
+              fontWeight: FontWeight.bold,
+              fontSize: 18,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _circleWithChild(BuildContext context, Widget child) {
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 2),
+      ),
+      child: CircleAvatar(
+        radius: 20,
+        backgroundColor: Colors.white,
+        child: child,
       ),
     );
   }
