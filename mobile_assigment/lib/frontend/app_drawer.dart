@@ -111,6 +111,12 @@ class WmsDrawer extends StatelessWidget {
             ),
             _navTile(
               context,
+              icon: Icons.help_outline,
+              title: 'FAQ',
+              route: AppRouter.faq,
+            ),
+            _navTile(
+              context,
               icon: Icons.person_outline,
               title: 'Profile',
               route: AppRouter.profile,

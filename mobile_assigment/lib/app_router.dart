@@ -8,6 +8,8 @@ import 'backend/profile.dart';
 import 'frontend/billing_pages.dart';
 import 'frontend/feedback_pages.dart';
 import 'frontend/tracking.dart';
+import 'frontend/store_locator.dart';
+import 'frontend/faq.dart';
 
 class AppRouter {
   static const login = '/login';
@@ -20,6 +22,8 @@ class AppRouter {
   static const feedback = '/feedback';
   static const notices = '/notices';
   static const profile = '/profile';
+  static const storeLocator = '/stores';
+  static const faq = '/faq';
 
   static Map<String, WidgetBuilder> routes = {
     login: (ctx) => const LoginPage(),
@@ -28,11 +32,13 @@ class AppRouter {
     tracking: (ctx) => const TrackingPage(),
     billing: (ctx) => const BillingListPage(),
     feedback: (ctx) => const FeedbackListPage(),
+    faq: (ctx) => const FaqPage(),
     profile: (ctx) {
       if (ProfileBackend.instance.currentUser == null) {
         return const LoginPage(redirectTo: profile);
       }
       return const ProfilePage();
     },
+    storeLocator: (ctx) => const StoreLocatorPage(),
   };
 }

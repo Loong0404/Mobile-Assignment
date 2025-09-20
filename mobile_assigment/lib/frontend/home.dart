@@ -196,6 +196,18 @@ class _HomePageState extends State<HomePage> {
                     'Feedback',
                     AppRouter.feedback,
                   ),
+                  _buildServiceItem(
+                    Icons.store_mall_directory,
+                    'Stores',
+                    AppRouter.storeLocator,
+                    color: const Color(0xFF2E7D32), // Green
+                  ),
+                  _buildServiceItem(
+                    Icons.help_outline,
+                    'FAQ',
+                    AppRouter.faq,
+                    color: const Color(0xFF009688), // Teal
+                  ),
                   _buildServiceItem(Icons.person, 'Profile', AppRouter.profile),
                 ]),
               ),

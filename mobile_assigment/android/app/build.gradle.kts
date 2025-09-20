@@ -26,7 +26,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.mobile_assigment"
-        minSdk = 23                     // ✅ cloud_firestore 需要至少 23
+        minSdk = flutter.minSdkVersion                     // ✅ cloud_firestore 需要至少 23
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
