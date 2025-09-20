@@ -1,4 +1,3 @@
-// lib/backend/billing.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// Invoice data model (matches Cloud Function output)
@@ -7,9 +6,9 @@ class InvoiceModel {
   final String userId;
   final String bookingID;
   final String plateNumber;
-  final double amount;       // e.g. 120.0
+  final double amount;       
   final String status;       // 'pending' | 'paid'
-  final DateTime date;       // server time when created
+  final DateTime date;       
 
   InvoiceModel({
     required this.invoiceID,
