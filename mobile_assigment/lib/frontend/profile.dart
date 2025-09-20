@@ -1,23 +1,33 @@
 // lib/frontend/profile.dart
-// Profile page (clickable avatar + edit name/email/password + vehicles + history)
+//
+// Profile page with:
+// - Avatar (tap camera icon -> choose camera or gallery, saves as base64 to Firestore)
+// - Edit name / email / password
+// - Vehicles list (+ add/edit/delete)
+// - Simple service history demo
+// - Drawer (WmsDrawer) for global navigation
+//
+// Notes for reviewers:
+// * All SnackBars and Navigator calls check context.mounted after awaits.
+// * Avatar camera button is intentionally small to avoid blocking the photo view.
 
 import 'dart:convert';
-import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
-import '../backend/profile.dart';
-import 'package:firebase_auth/firebase_auth.dart' as fb;
-import 'package:cloud_firestore/cloud_firestore.dart' as fs;
-import 'package:image_picker/image_picker.dart';
 
-class ProfilePage extends StatefulWidget {
+import 'package:cloud_firestore/cloud_firestore.dart' as fs;
+import 'package:firebase_auth/firebase_auth.dart' as fb;
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
+
+import '../app_router.dart';
+import '../backend/profile.dart';
+import '../main.dart';
+import 'app_drawer.dart';
+
+class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key});
 
-  @override
-  State<ProfilePage> createState() => _ProfilePageState();
-}
-
-class _ProfilePageState extends State<ProfilePage> {
-  // ---- 硬編碼 Service history（倒序） ----
+  // Demo history (reverse chronological)
   List<_ServiceHistory> _demoHistory() => [
     _ServiceHistory(
       date: DateTime(2024, 9, 20),
@@ -42,34 +52,38 @@ class _ProfilePageState extends State<ProfilePage> {
     ),
   ]..sort((a, b) => b.date.compareTo(a.date));
 
-  // ---- 更換頭像（整個頭像可點 + 右上角相機可點） ----
-  Future<void> _changePhoto() async {
+  // Pick image from camera or gallery and save to Firestore as base64
+  Future<void> _pickAndSavePhoto(
+    BuildContext context,
+    ImageSource source,
+  ) async {
     try {
-      final authUser = fb.FirebaseAuth.instance.currentUser;
-      if (authUser == null) return;
+      final user = fb.FirebaseAuth.instance.currentUser;
+      if (user == null) return;
 
       final picker = ImagePicker();
       final picked = await picker.pickImage(
-        source: ImageSource.gallery,
+        source: source,
         maxWidth: 600,
         maxHeight: 600,
-        imageQuality: 70, // 壓縮避免 Firestore 單文件 1MB 限制
+        imageQuality: 75,
       );
       if (picked == null) return;
 
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Processing image...')));
 
       final bytes = await picked.readAsBytes();
-      final base64Image = base64Encode(bytes);
+      final b64 = base64Encode(bytes);
 
-      if (base64Image.length > 900000) {
-        if (!mounted) return;
+      // Keep under Firestore 1MB per document headroom
+      if (b64.length > 900000) {
+        if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Image too large. Please choose a smaller one.'),
+            content: Text('Image is too large. Please choose a smaller image.'),
             backgroundColor: Colors.red,
           ),
         );
@@ -78,14 +92,14 @@ class _ProfilePageState extends State<ProfilePage> {
 
       await fs.FirebaseFirestore.instance
           .collection('users')
-          .doc(authUser.uid)
+          .doc(user.uid)
           .set({
-            'photoUrl': null, // 清掉舊的 URL 欄位
-            'photoBase64': base64Image,
+            'photoUrl': null,
+            'photoBase64': b64,
             'updatedAt': fs.FieldValue.serverTimestamp(),
           }, fs.SetOptions(merge: true));
 
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Profile photo updated'),
@@ -93,21 +107,47 @@ class _ProfilePageState extends State<ProfilePage> {
         ),
       );
     } catch (e) {
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to update photo: $e'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
       );
     }
   }
 
-  // ---- 編輯名稱 ----
-  Future<void> _editName(String initial) async {
+  // Bottom sheet to choose camera / gallery
+  Future<void> _changePhoto(BuildContext context) async {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Take a photo'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickAndSavePhoto(context, ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Choose from gallery'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickAndSavePhoto(context, ImageSource.gallery);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Edit name dialog
+  Future<void> _editName(BuildContext context, String initial) async {
     final ctrl = TextEditingController(text: initial);
     final form = GlobalKey<FormState>();
-
     await showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -131,7 +171,8 @@ class _ProfilePageState extends State<ProfilePage> {
             onPressed: () async {
               if (!(form.currentState?.validate() ?? false)) return;
               final name = ctrl.text.trim();
-              final u = fb.FirebaseAuth.instance.currentUser!;
+              final u = fb.FirebaseAuth.instance.currentUser;
+              if (u == null) return;
               await u.updateDisplayName(name);
               await fs.FirebaseFirestore.instance
                   .collection('users')
@@ -140,7 +181,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     'name': name,
                     'updatedAt': fs.FieldValue.serverTimestamp(),
                   }, fs.SetOptions(merge: true));
-              if (mounted) Navigator.pop(context);
+              if (context.mounted) Navigator.pop(context);
             },
             child: const Text('Save'),
           ),
@@ -149,8 +190,8 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  // ---- 通用 reauth ----
-  Future<bool> _reauth(String email) async {
+  // Reauth helper (password)
+  Future<bool> _reauth(BuildContext context, String email) async {
     final pwdCtrl = TextEditingController();
     final ok = await showDialog<bool>(
       context: context,
@@ -180,12 +221,12 @@ class _ProfilePageState extends State<ProfilePage> {
         email: email,
         password: pwdCtrl.text,
       );
-      await fb.FirebaseAuth.instance.currentUser!.reauthenticateWithCredential(
-        cred,
-      );
+      final user = fb.FirebaseAuth.instance.currentUser;
+      if (user == null) return false;
+      await user.reauthenticateWithCredential(cred);
       return true;
     } on fb.FirebaseAuthException catch (e) {
-      if (mounted) {
+      if (context.mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(e.message ?? 'Reauth failed')));
@@ -194,11 +235,10 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
-  // ---- 編輯 Email ----
-  Future<void> _editEmail(String currentEmail) async {
+  // Edit email dialog
+  Future<void> _editEmail(BuildContext context, String currentEmail) async {
     final emailCtrl = TextEditingController(text: currentEmail);
     final form = GlobalKey<FormState>();
-
     await showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -224,9 +264,11 @@ class _ProfilePageState extends State<ProfilePage> {
           FilledButton(
             onPressed: () async {
               if (!(form.currentState?.validate() ?? false)) return;
-              final user = fb.FirebaseAuth.instance.currentUser!;
+              final user = fb.FirebaseAuth.instance.currentUser;
+              if (user == null) return;
               final newEmail = emailCtrl.text.trim();
-              if (!await _reauth(user.email ?? '')) return;
+              final oldEmail = user.email ?? '';
+              if (!await _reauth(context, oldEmail)) return;
               await user.verifyBeforeUpdateEmail(newEmail);
               await fs.FirebaseFirestore.instance
                   .collection('users')
@@ -235,7 +277,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     'email': newEmail,
                     'updatedAt': fs.FieldValue.serverTimestamp(),
                   }, fs.SetOptions(merge: true));
-              if (mounted) Navigator.pop(context);
+              if (context.mounted) Navigator.pop(context);
             },
             child: const Text('Save'),
           ),
@@ -244,12 +286,11 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  // ---- 修改密碼 ----
-  Future<void> _changePassword(String email) async {
+  // Change password dialog
+  Future<void> _changePassword(BuildContext context, String email) async {
     final currentCtrl = TextEditingController();
     final newCtrl = TextEditingController();
     final form = GlobalKey<FormState>();
-
     await showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -295,21 +336,20 @@ class _ProfilePageState extends State<ProfilePage> {
                   email: email,
                   password: currentCtrl.text,
                 );
-                final user = fb.FirebaseAuth.instance.currentUser!;
+                final user = fb.FirebaseAuth.instance.currentUser;
+                if (user == null) return;
                 await user.reauthenticateWithCredential(cred);
                 await user.updatePassword(newCtrl.text);
-                if (mounted) Navigator.pop(context);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Password updated')),
-                  );
-                }
+                if (!context.mounted) return;
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Password updated')),
+                );
               } on fb.FirebaseAuthException catch (e) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(e.message ?? 'Failed to update')),
-                  );
-                }
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(e.message ?? 'Failed to update')),
+                );
               }
             },
             child: const Text('Save'),
@@ -319,14 +359,18 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  // ---- 新增/編輯 Vehicle ----
-  Future<void> _editVehicle({
+  // Add/edit vehicle dialog
+  Future<void> _editVehicle(
+    BuildContext context, {
     String? docId,
     String? plate,
     String? brand,
   }) async {
-    final uid = ProfileBackend.instance.currentUser!.id;
-    final userId = ProfileBackend.instance.currentUser!.userId;
+    final backendUser = ProfileBackend.instance.currentUser;
+    if (backendUser == null) return;
+
+    final uid = backendUser.id;
+    final userId = backendUser.userId;
     final plateCtrl = TextEditingController(text: plate ?? '');
     final brandCtrl = TextEditingController(text: brand ?? '');
     final form = GlobalKey<FormState>();
@@ -367,7 +411,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     .collection('vehicle')
                     .doc(docId)
                     .delete();
-                if (mounted) Navigator.pop(context);
+                if (context.mounted) Navigator.pop(context);
               },
               child: const Text('Delete', style: TextStyle(color: Colors.red)),
             ),
@@ -396,7 +440,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     .doc(docId)
                     .set(data, fs.SetOptions(merge: true));
               }
-              if (mounted) Navigator.pop(context);
+              if (context.mounted) Navigator.pop(context);
             },
             child: const Text('Save'),
           ),
@@ -421,7 +465,6 @@ class _ProfilePageState extends State<ProfilePage> {
         .collection('users')
         .doc(uid)
         .snapshots();
-
     final vehiclesStream = fs.FirebaseFirestore.instance
         .collection('vehicle')
         .where('userUid', isEqualTo: uid)
@@ -430,6 +473,7 @@ class _ProfilePageState extends State<ProfilePage> {
     final history = _demoHistory();
     final lastService = history.isNotEmpty ? history.first.date : null;
     final nextService = lastService?.add(const Duration(days: 365));
+
     String humanDate(DateTime d) => DateFormat('yyyy-MM-dd').format(d);
     String nextServiceText() {
       if (nextService == null) return '—';
@@ -441,6 +485,7 @@ class _ProfilePageState extends State<ProfilePage> {
     }
 
     return Scaffold(
+      drawer: const WmsDrawer(),
       appBar: AppBar(title: const Text('Profile')),
       body: StreamBuilder<fs.DocumentSnapshot<Map<String, dynamic>>>(
         stream: userDocStream,
@@ -448,11 +493,21 @@ class _ProfilePageState extends State<ProfilePage> {
           final doc = snap.data?.data();
           final name = (doc?['name'] ?? backendUser.name) as String;
           final email = (doc?['email'] ?? backendUser.email) as String;
+          final base64Image = doc?['photoBase64'] as String?;
+
+          ImageProvider? avatar;
+          if (base64Image != null && base64Image.isNotEmpty) {
+            try {
+              avatar = MemoryImage(base64Decode(base64Image));
+            } catch (_) {
+              avatar = null;
+            }
+          }
 
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              // ===== Header: Avatar（可點擊） + Name/Email/UserId =====
+              // Header card (small camera button overlays bottom-right)
               Card(
                 elevation: 0,
                 shape: RoundedRectangleBorder(
@@ -462,75 +517,37 @@ class _ProfilePageState extends State<ProfilePage> {
                   padding: const EdgeInsets.all(16),
                   child: Row(
                     children: [
-                      // 以 Stack 疊加小相機按鈕；整個頭像與相機都可點
-                      StreamBuilder<fs.DocumentSnapshot>(
-                        stream: fs.FirebaseFirestore.instance
-                            .collection('users')
-                            .doc(uid)
-                            .snapshots(),
-                        builder: (context, snapshot) {
-                          String? base64Image;
-                          if (snapshot.hasData) {
-                            final data =
-                                snapshot.data!.data() as Map<String, dynamic>?;
-                            base64Image = data?['photoBase64'] as String?;
-                          }
-
-                          Widget avatar;
-                          if (base64Image == null || base64Image.isEmpty) {
-                            avatar = const CircleAvatar(
-                              radius: 38,
-                              child: Icon(Icons.person, size: 34),
-                            );
-                          } else {
-                            try {
-                              avatar = CircleAvatar(
-                                radius: 38,
-                                backgroundImage: MemoryImage(
-                                  base64Decode(base64Image),
-                                ),
-                              );
-                            } catch (_) {
-                              avatar = const CircleAvatar(
-                                radius: 38,
-                                child: Icon(Icons.person, size: 34),
-                              );
-                            }
-                          }
-
-                          return Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              // 整個頭像可點
-                              InkWell(
-                                onTap: _changePhoto,
-                                borderRadius: BorderRadius.circular(44),
-                                child: avatar,
-                              ),
-                              // 右下角小相機
-                              Positioned(
-                                right: -2,
-                                bottom: -2,
-                                child: Material(
-                                  color: Colors.white,
-                                  shape: const CircleBorder(),
-                                  elevation: 2,
-                                  child: InkWell(
-                                    onTap: _changePhoto,
-                                    customBorder: const CircleBorder(),
-                                    child: const Padding(
-                                      padding: EdgeInsets.all(6),
-                                      child: Icon(
-                                        Icons.photo_camera_outlined,
-                                        size: 18,
-                                      ),
-                                    ),
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          CircleAvatar(
+                            radius: 34,
+                            backgroundImage: avatar,
+                            child: avatar == null
+                                ? const Icon(Icons.person, size: 34)
+                                : null,
+                          ),
+                          Positioned(
+                            right: -2,
+                            bottom: -2,
+                            child: Material(
+                              color: WmsApp.grabGreen,
+                              shape: const CircleBorder(),
+                              child: InkWell(
+                                customBorder: const CircleBorder(),
+                                onTap: () => _changePhoto(context),
+                                child: const Padding(
+                                  padding: EdgeInsets.all(6),
+                                  child: Icon(
+                                    Icons.photo_camera_outlined,
+                                    size: 16,
+                                    color: Colors.white,
                                   ),
                                 ),
                               ),
-                            ],
-                          );
-                        },
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(width: 16),
                       Expanded(
@@ -558,7 +575,7 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
               const SizedBox(height: 12),
 
-              // ===== Editable rows: Name / Email / Password =====
+              // Editable rows
               Card(
                 elevation: 0,
                 shape: RoundedRectangleBorder(
@@ -571,7 +588,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       title: const Text('Name'),
                       subtitle: Text(name),
                       trailing: TextButton.icon(
-                        onPressed: () => _editName(name),
+                        onPressed: () => _editName(context, name),
                         icon: const Icon(Icons.edit, size: 18),
                         label: const Text('Edit'),
                       ),
@@ -582,7 +599,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       title: const Text('Email'),
                       subtitle: Text(email),
                       trailing: TextButton.icon(
-                        onPressed: () => _editEmail(email),
+                        onPressed: () => _editEmail(context, email),
                         icon: const Icon(Icons.edit, size: 18),
                         label: const Text('Edit'),
                       ),
@@ -593,7 +610,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       title: const Text('Password'),
                       subtitle: const Text('Change your password'),
                       trailing: TextButton.icon(
-                        onPressed: () => _changePassword(email),
+                        onPressed: () => _changePassword(context, email),
                         icon: const Icon(Icons.edit, size: 18),
                         label: const Text('Change'),
                       ),
@@ -603,7 +620,7 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
               const SizedBox(height: 12),
 
-              // ===== Vehicles =====
+              // Vehicles
               Card(
                 elevation: 0,
                 shape: RoundedRectangleBorder(
@@ -623,7 +640,7 @@ class _ProfilePageState extends State<ProfilePage> {
                             ),
                           ),
                           TextButton.icon(
-                            onPressed: () => _editVehicle(),
+                            onPressed: () => _editVehicle(context),
                             icon: const Icon(Icons.add),
                             label: const Text('Add'),
                           ),
@@ -649,6 +666,7 @@ class _ProfilePageState extends State<ProfilePage> {
                             );
                           }
                           final docs = [...vSnap.data!.docs];
+                          // Client-side sort by createdAt desc (missing ones go last)
                           docs.sort((a, b) {
                             final ta = a.data()['createdAt'];
                             final tb = b.data()['createdAt'];
@@ -659,19 +677,21 @@ class _ProfilePageState extends State<ProfilePage> {
                               ta as fs.Timestamp,
                             );
                           });
+
                           if (docs.isEmpty) {
                             return const Padding(
                               padding: EdgeInsets.all(8),
                               child: Text('No vehicles yet.'),
                             );
                           }
+
                           return ListView.separated(
-                            separatorBuilder: (_, __) =>
-                                const Divider(height: 1),
                             shrinkWrap: true,
                             physics: const NeverScrollableScrollPhysics(),
+                            separatorBuilder: (ctx, _) =>
+                                const Divider(height: 1),
                             itemCount: docs.length,
-                            itemBuilder: (_, i) {
+                            itemBuilder: (ctx, i) {
                               final d = docs[i];
                               final plate = d['plateNumber'] as String? ?? '';
                               final brand = d['carType'] as String? ?? '';
@@ -685,6 +705,7 @@ class _ProfilePageState extends State<ProfilePage> {
                                 subtitle: Text(brand),
                                 trailing: TextButton.icon(
                                   onPressed: () => _editVehicle(
+                                    context,
                                     docId: d.id,
                                     plate: plate,
                                     brand: brand,
@@ -703,7 +724,7 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
               const SizedBox(height: 12),
 
-              // ===== Estimated next service =====
+              // Estimated next service
               Card(
                 elevation: 0,
                 shape: RoundedRectangleBorder(
@@ -717,7 +738,7 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
               const SizedBox(height: 12),
 
-              // ===== Service history (hardcoded) =====
+              // Simple service history block
               Card(
                 elevation: 0,
                 shape: RoundedRectangleBorder(
@@ -734,11 +755,11 @@ class _ProfilePageState extends State<ProfilePage> {
                       ),
                       const SizedBox(height: 8),
                       ListView.separated(
-                        separatorBuilder: (_, __) => const Divider(height: 1),
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
+                        separatorBuilder: (ctx, _) => const Divider(height: 1),
                         itemCount: history.length,
-                        itemBuilder: (_, i) {
+                        itemBuilder: (ctx, i) {
                           final h = history[i];
                           return ListTile(
                             dense: true,
@@ -758,12 +779,17 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
               const SizedBox(height: 24),
 
-              // ===== Sign out =====
+              // Sign out
               Center(
                 child: ElevatedButton(
                   onPressed: () async {
                     await ProfileBackend.instance.signOut();
-                    if (mounted) Navigator.pop(context);
+                    if (!context.mounted) return;
+                    Navigator.pushNamedAndRemoveUntil(
+                      context,
+                      AppRouter.home,
+                      (r) => false,
+                    );
                   },
                   child: const Text('Sign out'),
                 ),
@@ -782,6 +808,7 @@ class _ServiceHistory {
   final String workshop;
   final int mileage;
   final double amount;
+
   _ServiceHistory({
     required this.date,
     required this.type,

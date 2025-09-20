@@ -1,5 +1,7 @@
-import 'package:flutter/material.dart';
+// lib/frontend/register.dart
 import 'package:cloud_firestore/cloud_firestore.dart' as fs;
+import 'package:firebase_auth/firebase_auth.dart' as fb;
+import 'package:flutter/material.dart';
 
 import '../app_router.dart';
 import '../backend/profile.dart';
@@ -7,6 +9,7 @@ import '../main.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
+
   @override
   State<RegisterPage> createState() => _RegisterPageState();
 }
@@ -15,9 +18,9 @@ class _RegisterPageState extends State<RegisterPage> {
   final _form = GlobalKey<FormState>();
   final _name = TextEditingController();
   final _email = TextEditingController();
+  final _plate = TextEditingController();
   final _password = TextEditingController();
   final _confirm = TextEditingController();
-  final _plate = TextEditingController(); // 新增：车牌
   bool _obscure1 = true, _obscure2 = true;
   bool _loading = false;
 
@@ -25,30 +28,67 @@ class _RegisterPageState extends State<RegisterPage> {
   void dispose() {
     _name.dispose();
     _email.dispose();
+    _plate.dispose();
     _password.dispose();
     _confirm.dispose();
-    _plate.dispose();
     super.dispose();
+  }
+
+  Future<bool> _emailExists(String email) async {
+    final q = await fs.FirebaseFirestore.instance
+        .collection('users')
+        .where('email', isEqualTo: email)
+        .limit(1)
+        .get();
+    return q.docs.isNotEmpty;
   }
 
   Future<void> _submit() async {
     if (!_form.currentState!.validate()) return;
+
+    final name = _name.text.trim();
+    final email = _email.text.trim();
+    final plate = _plate.text.trim();
+    final pwd = _password.text;
+
     setState(() => _loading = true);
     try {
-      // 1) 注册 Auth & users/{uid}
-      final u = await ProfileBackend.instance.register(
-        name: _name.text.trim(),
-        email: _email.text.trim(),
-        password: _password.text,
+      // 1) Check duplicate email in Firestore
+      if (await _emailExists(email)) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('This email is already registered.')),
+        );
+        setState(() => _loading = false);
+        return;
+      }
+
+      // 2) Register with backend (Firebase Auth + users doc)
+      await ProfileBackend.instance.register(
+        name: name,
+        email: email,
+        password: pwd,
       );
 
-      // 2) 立刻写入一辆 vehicle（carType 暂设 Unknown）
-      final plate = _plate.text.trim().toUpperCase();
+      // 3) Add plateNo into users doc, and create a vehicle record
+      final uid = fb.FirebaseAuth.instance.currentUser!.uid;
+      final userDocRef = fs.FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid);
+      await userDocRef.set({
+        'plateNo': plate,
+        'updatedAt': fs.FieldValue.serverTimestamp(),
+      }, fs.SetOptions(merge: true));
+
+      // You'll likely have an incremental 'userId' generator already in backend.
+      // We also create the first vehicle document visible in Profile > Vehicles.
+      final userSnap = await userDocRef.get();
+      final userId = (userSnap.data()?['userId'] ?? '') as String;
       await fs.FirebaseFirestore.instance.collection('vehicle').add({
         'plateNumber': plate,
-        'carType': 'Unknown',
-        'userUid': u.id,
-        'userId': u.userId, // 由 FirebaseProfileBackend 自动分配的 U001...
+        'carType': '',
+        'userUid': uid,
+        'userId': userId,
         'createdAt': fs.FieldValue.serverTimestamp(),
         'updatedAt': fs.FieldValue.serverTimestamp(),
       });
@@ -81,7 +121,6 @@ class _RegisterPageState extends State<RegisterPage> {
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  // ignore: deprecated_member_use
                   color: grabGreen.withOpacity(.08),
                   borderRadius: BorderRadius.circular(14),
                 ),
@@ -92,7 +131,6 @@ class _RegisterPageState extends State<RegisterPage> {
               ),
               const SizedBox(height: 16),
 
-              // Name
               TextFormField(
                 controller: _name,
                 decoration: const InputDecoration(
@@ -105,7 +143,6 @@ class _RegisterPageState extends State<RegisterPage> {
               ),
               const SizedBox(height: 12),
 
-              // Email
               TextFormField(
                 controller: _email,
                 keyboardType: TextInputType.emailAddress,
@@ -123,22 +160,20 @@ class _RegisterPageState extends State<RegisterPage> {
               ),
               const SizedBox(height: 12),
 
-              // Car plate (必填)
+              // Car plate (required)
               TextFormField(
                 controller: _plate,
                 textCapitalization: TextCapitalization.characters,
                 decoration: const InputDecoration(
                   labelText: 'Car plate',
-                  hintText: 'e.g. VBA1234',
                   prefixIcon: Icon(Icons.directions_car_outlined),
                 ),
                 validator: (v) => (v == null || v.trim().isEmpty)
-                    ? 'Please enter your car plate'
+                    ? 'Car plate is required'
                     : null,
               ),
               const SizedBox(height: 12),
 
-              // Password
               TextFormField(
                 controller: _password,
                 obscureText: _obscure1,
@@ -160,7 +195,6 @@ class _RegisterPageState extends State<RegisterPage> {
               ),
               const SizedBox(height: 12),
 
-              // Confirm
               TextFormField(
                 controller: _confirm,
                 obscureText: _obscure2,
