@@ -1,5 +1,7 @@
+// lib/frontend/billing_pages.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+
 import '../backend/billing.dart';
 import '../backend/payment.dart';
 
@@ -12,33 +14,18 @@ class BillingListPage extends StatelessWidget {
     if (uid == null) return const _RequireLogin();
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Invoices'),
-        actions: [
-          IconButton(
-            tooltip: 'Seed invoice',
-            onPressed: () async {
-              final id = 'INV-${DateTime.now().millisecondsSinceEpoch}';
-              await BillingService().createInvoice(
-                invoiceID: id,
-                userId: uid,
-                amount: 120.00,
-                bookingID: 'BKG-1234',
-                plateNumber: 'VBA1234',
-              );
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(SnackBar(content: Text('Invoice $id created')));
-            },
-            icon: const Icon(Icons.add),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Invoices')),
       body: StreamBuilder<List<InvoiceModel>>(
         stream: BillingService().watchUserInvoicesSafe(uid),
         builder: (context, snap) {
           if (snap.hasError) {
-            return Center(child: Text('Error: ${snap.error}', style: const TextStyle(color: Colors.red)));
+            return Center(
+              child: Text(
+                'Error: ${snap.error}',
+                style: const TextStyle(color: Colors.red),
+                textAlign: TextAlign.center,
+              ),
+            );
           }
           if (!snap.hasData) return const Center(child: CircularProgressIndicator());
 
@@ -52,11 +39,8 @@ class BillingListPage extends StatelessWidget {
               final inv = invoices[i];
               final paid = inv.status.toLowerCase() == 'paid';
               final color = paid ? Colors.green : Colors.orange;
-
               return ListTile(
-                title: Text(
-                  'RM ${inv.amount.toStringAsFixed(2)} • ${inv.plateNumber}',
-                ),
+                title: Text('RM ${inv.amount.toStringAsFixed(2)} • ${inv.plateNumber}'),
                 subtitle: Text(_ymd(inv.date)),
                 trailing: Chip(
                   label: Text(inv.status),
@@ -101,7 +85,10 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
   Future<void> _load() async {
     final data = await BillingService().getInvoice(widget.invoiceID);
     if (!mounted) return;
-    setState(() { inv = data; loading = false; });
+    setState(() {
+      inv = data;
+      loading = false;
+    });
   }
 
   @override
@@ -110,10 +97,16 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
     if (uid == null) return const _RequireLogin();
 
     if (loading) {
-      return Scaffold(appBar: AppBar(title: const Text('Invoice')), body: const Center(child: CircularProgressIndicator()));
+      return Scaffold(
+        appBar: AppBar(title: const Text('Invoice')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
     }
     if (inv == null) {
-      return Scaffold(appBar: AppBar(title: const Text('Invoice')), body: const Center(child: Text('Invoice not found')));
+      return Scaffold(
+        appBar: AppBar(title: const Text('Invoice')),
+        body: const Center(child: Text('Invoice not found')),
+      );
     }
 
     final i = inv!;
@@ -126,9 +119,7 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
         padding: const EdgeInsets.all(16),
         child: Card(
           elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -168,15 +159,15 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> {
   }
 
   Widget _kv(String k, String v) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 6),
-    child: Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(k, style: const TextStyle(fontWeight: FontWeight.w600)),
-        Flexible(child: Text(v, textAlign: TextAlign.right)),
-      ],
-    ),
-  );
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(k, style: const TextStyle(fontWeight: FontWeight.w600)),
+            Flexible(child: Text(v, textAlign: TextAlign.right)),
+          ],
+        ),
+      );
 
   static String _ymd(DateTime dt) =>
       '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
@@ -206,9 +197,7 @@ class _PaymentPageState extends State<PaymentPage> {
           children: [
             Card(
               elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -240,11 +229,7 @@ class _PaymentPageState extends State<PaymentPage> {
             FilledButton(
               onPressed: paying ? null : _pay,
               child: paying
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
+                  ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
                   : Text('Pay RM ${i.amount.toStringAsFixed(2)}'),
             ),
           ],
@@ -262,6 +247,7 @@ class _PaymentPageState extends State<PaymentPage> {
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid == null) throw Exception('Please sign in');
 
+      // Mark invoice paid, then create the payment record
       await BillingService().markPaid(widget.invoice.invoiceID);
       await PaymentService().createPayment(
         invoiceID: widget.invoice.invoiceID,
@@ -279,22 +265,22 @@ class _PaymentPageState extends State<PaymentPage> {
   }
 
   Widget _kv(String k, String v) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 6),
-    child: Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(k, style: const TextStyle(fontWeight: FontWeight.w600)),
-        Flexible(child: Text(v, textAlign: TextAlign.right)),
-      ],
-    ),
-  );
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(k, style: const TextStyle(fontWeight: FontWeight.w600)),
+            Flexible(child: Text(v, textAlign: TextAlign.right)),
+          ],
+        ),
+      );
 
   static String _ymd(DateTime dt) =>
       '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
 }
 
 class _RequireLogin extends StatelessWidget {
-  const _RequireLogin();
+  const _RequireLogin({super.key});
   @override
   Widget build(BuildContext context) {
     return const Scaffold(

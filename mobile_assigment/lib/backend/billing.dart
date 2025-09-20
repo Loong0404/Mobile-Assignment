@@ -1,98 +1,115 @@
+// lib/backend/billing.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+/// Invoice data model (matches Cloud Function output)
 class InvoiceModel {
   final String invoiceID;
-  final double amount;
-  final String status; // 'paid' | 'pending'
-  final DateTime date;
+  final String userId;
   final String bookingID;
   final String plateNumber;
-  final String userId;
+  final double amount;       // e.g. 120.0
+  final String status;       // 'pending' | 'paid'
+  final DateTime date;       // server time when created
 
   InvoiceModel({
     required this.invoiceID,
+    required this.userId,
+    required this.bookingID,
+    required this.plateNumber,
     required this.amount,
     required this.status,
     required this.date,
-    required this.bookingID,
-    required this.plateNumber,
-    required this.userId,
   });
 
   Map<String, dynamic> toMap() => {
         'invoiceID': invoiceID,
+        'userId': userId,
+        'bookingID': bookingID,
+        'plateNumber': plateNumber,
         'amount': amount,
         'status': status,
         'date': Timestamp.fromDate(date),
-        'bookingID': bookingID,
-        'plateNumber': plateNumber,
-        'userId': userId,
       };
 
+  /// Robust factory that tolerates missing/typed fields
   factory InvoiceModel.fromDoc(DocumentSnapshot<Map<String, dynamic>> d) {
-    final m = d.data()!;
+    final m = d.data() ?? const {};
     return InvoiceModel(
-      invoiceID: m['invoiceID'] as String,
-      amount: (m['amount'] as num).toDouble(),
-      status: m['status'] as String,
-      date: (m['date'] as Timestamp).toDate(),
-      bookingID: m['bookingID'] as String,
-      plateNumber: m['plateNumber'] as String,
-      userId: m['userId'] as String,
+      invoiceID: (m['invoiceID'] ?? d.id) as String,
+      userId: (m['userId'] ?? '') as String,
+      bookingID: (m['bookingID'] ?? '') as String,
+      plateNumber: (m['plateNumber'] ?? '') as String,
+      amount: (m['amount'] is num) ? (m['amount'] as num).toDouble() : 0.0,
+      status: (m['status'] ?? 'pending') as String,
+      date: _asDate(m['date']),
     );
+  }
+
+  static DateTime _asDate(dynamic v) {
+    if (v is Timestamp) return v.toDate();
+    if (v is DateTime) return v;
+    return DateTime.fromMillisecondsSinceEpoch(0);
   }
 }
 
 class BillingService {
-  final _col = FirebaseFirestore.instance.collection('invoices');
+  final CollectionReference<Map<String, dynamic>> _col =
+      FirebaseFirestore.instance.collection('invoices');
 
+  /// Create an invoice manually (not required if using the Cloud Function,
+  /// but handy for tests or admin tools).
   Future<void> createInvoice({
     required String invoiceID,
     required String userId,
-    required double amount,
     required String bookingID,
     required String plateNumber,
+    double amount = 120.0,
+    String status = 'pending',
     DateTime? date,
   }) async {
-    await _col.doc(invoiceID).set(InvoiceModel(
+    final data = InvoiceModel(
       invoiceID: invoiceID,
-      amount: amount,
-      status: 'pending',
-      date: date ?? DateTime.now(),
+      userId: userId,
       bookingID: bookingID,
       plateNumber: plateNumber,
-      userId: userId,
-    ).toMap());
+      amount: amount,
+      status: status,
+      date: date ?? DateTime.now(),
+    ).toMap();
+
+    await _col.doc(invoiceID).set(data);
   }
 
+  /// Get a single invoice by id
+  Future<InvoiceModel?> getInvoice(String id) async {
+    final snap = await _col.doc(id).get();
+    return snap.exists ? InvoiceModel.fromDoc(snap) : null;
+  }
+
+  /// Mark invoice as paid
+  Future<void> markPaid(String id) async {
+    await _col.doc(id).update({'status': 'paid'});
+  }
+
+  /// Stream all invoices for a user (sorted in Dart so missing 'date' won't break)
   Stream<List<InvoiceModel>> watchUserInvoicesSafe(String userId) {
-    return _col
-        .where('userId', isEqualTo: userId)
-        .snapshots()
-        .map((qs) {
-          final list = qs.docs.map(InvoiceModel.fromDoc).toList();
-          list.sort((a, b) => b.date.compareTo(a.date));
-          return list;
-        });
+    return _col.where('userId', isEqualTo: userId).snapshots().map((qs) {
+      final list = qs.docs.map(InvoiceModel.fromDoc).toList();
+      list.sort((a, b) => b.date.compareTo(a.date));
+      return list;
+    });
   }
 
-  /// Only PAID invoices for current user (for the Feedback page)
+  /// Stream only PAID invoices for a user (used by Feedback page)
   Stream<List<InvoiceModel>> watchPaidInvoicesSafe(String userId) {
     return _col
         .where('userId', isEqualTo: userId)
         .where('status', isEqualTo: 'paid')
         .snapshots()
         .map((qs) {
-          final list = qs.docs.map(InvoiceModel.fromDoc).toList();
-          list.sort((a, b) => b.date.compareTo(a.date));
-          return list;
-        });
+      final list = qs.docs.map(InvoiceModel.fromDoc).toList();
+      list.sort((a, b) => b.date.compareTo(a.date));
+      return list;
+    });
   }
-
-  Future<InvoiceModel?> getInvoice(String id) async {
-    final snap = await _col.doc(id).get();
-    return snap.exists ? InvoiceModel.fromDoc(snap) : null;
-  }
-
-  Future<void> markPaid(String id) => _col.doc(id).update({'status': 'paid'});
 }
