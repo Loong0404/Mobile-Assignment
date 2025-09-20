@@ -6,7 +6,7 @@ class PaymentModel {
   final double amount;
   final String status; // 'paid' | 'pending'
   final DateTime paymentDate;
-  final String paymentTime; // "HH:mm"
+  final String paymentTime; 
   final String userId;
 
   PaymentModel({
