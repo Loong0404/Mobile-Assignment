@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart' as fs;
 
 class TrackingBackend {
@@ -106,6 +107,11 @@ class TrackingBackend {
 class ServiceTracking {
   final String id;
   final String bookingId;
+  final String? plateNumber;
+  final String? serviceId; // legacy single service id
+  final String? serviceType; // legacy single service type
+  final List<String>? serviceIds; // multiple service ids
+  final List<String>? serviceTypes; // multiple service types
   final String currentStatus;
   final DateTime updatedAt;
   final Map<String, StatusUpdate> statusUpdates;
@@ -114,9 +120,19 @@ class ServiceTracking {
   final String? userId; // users.userId (e.g., U001)
   final String? uid; // Firebase Auth UID
 
+  // Internal state for demo de-duplication
+  static String? _lastDemoStatus;
+  static String? _lastDemoTechId;
+  static int _demoCounter = 0;
+
   ServiceTracking({
     required this.id,
     required this.bookingId,
+    this.plateNumber,
+    this.serviceId,
+    this.serviceType,
+    this.serviceIds,
+    this.serviceTypes,
     required this.currentStatus,
     required this.updatedAt,
     required this.statusUpdates,
@@ -138,9 +154,41 @@ class ServiceTracking {
       TrackingBackend.qualityCheck,
       TrackingBackend.finalTesting,
     ];
-    final seed = DateTime.now().millisecondsSinceEpoch ^ bookingId.hashCode;
-    final idx = seed % flow.length;
-    final currentStatus = status ?? flow[idx];
+
+    // Seed with time + booking, add a local counter to avoid repeats on rapid inserts
+    final baseSeed = DateTime.now().microsecondsSinceEpoch ^ bookingId.hashCode;
+    final localCounter = _demoCounter++;
+    final seed = baseSeed + localCounter * 101;
+    final rand = Random((seed & 0x7fffffff));
+
+    // Pick status using Random for better distribution
+    int idx = rand.nextInt(flow.length);
+    String currentStatus = status ?? flow[idx];
+
+    // Choose a technician from a demo pool
+    Technician tech = Technician.demo(
+      seed: (((seed * 997) ^ idx) & 0x7fffffff),
+    );
+
+    // Ensure the latest two demo entries don't end up identical in status and technician
+    if (status == null &&
+        ServiceTracking._lastDemoStatus == currentStatus &&
+        ServiceTracking._lastDemoTechId == tech.id) {
+      final altIdx = (idx + 1 + rand.nextInt(flow.length - 1)) % flow.length;
+      currentStatus = flow[altIdx];
+      // pick a different tech id
+      Technician altTech = tech;
+      int safety = 0;
+      while (altTech.id == tech.id && safety++ < 7) {
+        final tSeed = ((seed + safety * 1337) & 0x7fffffff);
+        altTech = Technician.demo(seed: tSeed);
+      }
+      tech = altTech;
+    }
+
+    // Record for next demo call
+    ServiceTracking._lastDemoStatus = currentStatus;
+    ServiceTracking._lastDemoTechId = tech.id;
 
     // Create sample status updates
     final statusUpdates = <String, StatusUpdate>{};
@@ -158,7 +206,7 @@ class ServiceTracking {
     ];
 
     // Get index of the current status in the service flow
-    final currentFlowIndex = serviceFlow.indexOf(currentStatus);
+    int currentFlowIndex = serviceFlow.indexOf(currentStatus);
 
     // Determine which statuses to include based on current status
     List<String> includedStatuses = [];
@@ -318,11 +366,16 @@ class ServiceTracking {
     return ServiceTracking(
       id: 'track-${DateTime.now().millisecondsSinceEpoch}',
       bookingId: bookingId,
+      plateNumber: null,
+      serviceId: null,
+      serviceType: null,
+      serviceIds: null,
+      serviceTypes: null,
       currentStatus: currentStatus,
       updatedAt: DateTime.now().subtract(updatedJitter),
       statusUpdates: statusUpdates,
-      technicianId: Technician.demo().id,
-      technician: Technician.demo(),
+      technicianId: tech.id,
+      technician: tech,
       userId: null,
       uid: null,
     );
@@ -342,6 +395,20 @@ class ServiceTracking {
     return ServiceTracking(
       id: id,
       bookingId: (data['BookingID'] ?? data['bookingId'] ?? '') as String,
+      plateNumber:
+          (data['plateNumber'] ??
+                  data['PlateNumber'] ??
+                  data['plate'] ??
+                  data['VehiclePlate'])
+              as String?,
+      serviceId: (data['ServiceID'] ?? data['serviceId']) as String?,
+      serviceType: (data['serviceType'] ?? data['ServiceType']) as String?,
+      serviceIds: (data['ServiceIDs'] as List?)
+          ?.map((e) => e.toString())
+          .toList(),
+      serviceTypes: (data['ServiceTypes'] as List?)
+          ?.map((e) => e.toString())
+          .toList(),
       currentStatus:
           (data['status'] ??
                   data['currentStatus'] ??
@@ -361,6 +428,16 @@ class ServiceTracking {
     return {
       'TrackID': id,
       'BookingID': bookingId,
+      if (plateNumber != null && plateNumber!.trim().isNotEmpty)
+        'plateNumber': plateNumber,
+      if (serviceId != null && serviceId!.trim().isNotEmpty)
+        'ServiceID': serviceId,
+      if (serviceType != null && serviceType!.trim().isNotEmpty)
+        'serviceType': serviceType,
+      if (serviceIds != null && serviceIds!.isNotEmpty)
+        'ServiceIDs': serviceIds,
+      if (serviceTypes != null && serviceTypes!.isNotEmpty)
+        'ServiceTypes': serviceTypes,
       'status': currentStatus,
       'updatedAt': fs.FieldValue.serverTimestamp(),
       'stages': statusUpdates.map((k, v) => MapEntry(k, v.toMap())),
@@ -453,8 +530,9 @@ class Technician {
     required this.skills,
   });
 
-  factory Technician.demo() {
-    return Technician(
+  // A small pool of demo technicians to improve variety
+  static final List<Technician> _demoPool = [
+    Technician(
       id: 'T001',
       name: 'Alex Johnson',
       avatarUrl: 'https://i.pravatar.cc/150?img=12',
@@ -465,7 +543,76 @@ class Technician {
         'Diagnostics',
         'Electrical Systems',
       ],
-    );
+    ),
+    Technician(
+      id: 'T002',
+      name: 'Maria Garcia',
+      avatarUrl: 'https://i.pravatar.cc/150?img=32',
+      yearsExperience: 6,
+      skills: ['Diagnostics', 'Suspension', 'Air Conditioning'],
+    ),
+    Technician(
+      id: 'T003',
+      name: 'Liam Smith',
+      avatarUrl: 'https://i.pravatar.cc/150?img=5',
+      yearsExperience: 10,
+      skills: ['Transmission', 'Engine Repair', 'Drivetrain'],
+    ),
+    Technician(
+      id: 'T004',
+      name: 'Sofia Lee',
+      avatarUrl: 'https://i.pravatar.cc/150?img=47',
+      yearsExperience: 7,
+      skills: ['Electrical Systems', 'Infotainment', 'Diagnostics'],
+    ),
+    Technician(
+      id: 'T005',
+      name: 'Noah Patel',
+      avatarUrl: 'https://i.pravatar.cc/150?img=68',
+      yearsExperience: 9,
+      skills: ['Brake Systems', 'Steering', 'Suspension'],
+    ),
+    Technician(
+      id: 'T006',
+      name: 'Emma Wilson',
+      avatarUrl: 'https://i.pravatar.cc/150?img=15',
+      yearsExperience: 5,
+      skills: ['Air Conditioning', 'Cooling System', 'Diagnostics'],
+    ),
+    Technician(
+      id: 'T007',
+      name: 'Ethan Chen',
+      avatarUrl: 'https://i.pravatar.cc/150?img=25',
+      yearsExperience: 11,
+      skills: ['Engine Repair', 'Exhaust', 'Diagnostics'],
+    ),
+    Technician(
+      id: 'T008',
+      name: 'Olivia Brown',
+      avatarUrl: 'https://i.pravatar.cc/150?img=9',
+      yearsExperience: 4,
+      skills: ['Detailing', 'Quality Check', 'Final Testing'],
+    ),
+  ];
+
+  factory Technician.demo({int? seed}) {
+    if (_demoPool.isEmpty) {
+      // Fallback to a default technician if pool is empty for any reason
+      return Technician(
+        id: 'T001',
+        name: 'Alex Johnson',
+        avatarUrl: 'https://i.pravatar.cc/150?img=12',
+        yearsExperience: 8,
+        skills: [
+          'Engine Repair',
+          'Brake Systems',
+          'Diagnostics',
+          'Electrical Systems',
+        ],
+      );
+    }
+    final r = seed == null ? Random() : Random(seed);
+    return _demoPool[r.nextInt(_demoPool.length)];
   }
 
   factory Technician.fromMap(String id, Map<String, dynamic> data) {

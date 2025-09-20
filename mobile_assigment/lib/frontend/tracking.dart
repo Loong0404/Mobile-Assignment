@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../main.dart';
 import '../backend/tracking.dart';
@@ -15,6 +15,8 @@ class TrackingPage extends StatefulWidget {
 class _TrackingPageState extends State<TrackingPage> {
   Stream<List<ServiceTracking>>? _stream;
   final List<ServiceTracking> _historyTrackings = [];
+  String _historyFilter =
+      'all'; // 'all' | 'completed' | 'cancelled' | 'expired'
 
   @override
   void initState() {
@@ -23,10 +25,17 @@ class _TrackingPageState extends State<TrackingPage> {
     Future(() async {
       await TrackingService.instance.seedTechniciansIfEmpty();
       await TrackingService.instance.initTrackingsForCurrentUser();
+      await TrackingService.instance.startLiveSync();
       setState(() {
         _stream = TrackingService.instance.streamTrackingsForCurrentUser();
       });
     });
+  }
+
+  @override
+  void dispose() {
+    TrackingService.instance.stopLiveSync();
+    super.dispose();
   }
 
   @override
@@ -50,19 +59,55 @@ class _TrackingPageState extends State<TrackingPage> {
                   return _buildEmptyState();
                 }
 
+                bool isTerminated(ServiceTracking t) {
+                  final s = t.currentStatus.toLowerCase();
+                  return s == 'cancelled' || s == 'expired';
+                }
+
+                bool isCompleted(ServiceTracking t) =>
+                    t.currentStatus.toLowerCase() == 'completed';
+
+                // Treat Ready for Collection as active/current, not history
+                // Completed should be shown in History but remain tappable
                 final current = items
-                    .where(
-                      (t) =>
-                          t.currentStatus != TrackingBackend.readyForCollection,
-                    )
+                    .where((t) => !isTerminated(t) && !isCompleted(t))
                     .toList();
-                final history = [
-                  ...items.where(
-                    (t) =>
-                        t.currentStatus == TrackingBackend.readyForCollection,
-                  ),
+                // Build history then filter by selected status; sort newest first
+                List<ServiceTracking> history = [
+                  ...items.where((t) => isTerminated(t) || isCompleted(t)),
                   ..._historyTrackings,
                 ];
+                if (_historyFilter != 'all') {
+                  final f = _historyFilter;
+                  history =
+                      history
+                          .where((t) => t.currentStatus.toLowerCase() == f)
+                          .toList()
+                        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+                } else {
+                  final completed =
+                      history
+                          .where(
+                            (t) => t.currentStatus.toLowerCase() == 'completed',
+                          )
+                          .toList()
+                        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+                  final cancelled =
+                      history
+                          .where(
+                            (t) => t.currentStatus.toLowerCase() == 'cancelled',
+                          )
+                          .toList()
+                        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+                  final expired =
+                      history
+                          .where(
+                            (t) => t.currentStatus.toLowerCase() == 'expired',
+                          )
+                          .toList()
+                        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+                  history = [...completed, ...cancelled, ...expired];
+                }
                 return _buildTrackingList(current: current, history: history);
               },
             ),
@@ -124,25 +169,44 @@ class _TrackingPageState extends State<TrackingPage> {
             ),
           ),
           const SizedBox(height: 12),
-          ...current
-              .map((tracking) => _buildTrackingCard(tracking, isHistory: false))
-              .toList(),
+          ...current.map(
+            (tracking) => _buildTrackingCard(tracking, isHistory: false),
+          ),
           const SizedBox(height: 24),
         ],
 
         if (history.isNotEmpty) ...[
-          Text(
-            "Tracking History",
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: WmsApp.grabDark,
-            ),
+          Row(
+            children: [
+              Text(
+                "Tracking History",
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: WmsApp.grabDark,
+                ),
+              ),
+              const Spacer(),
+              PopupMenuButton<String>(
+                tooltip: 'Filter history',
+                icon: const Icon(Icons.filter_list),
+                onSelected: (value) => setState(() {
+                  _historyFilter =
+                      value; // 'all' | 'completed' | 'cancelled' | 'expired'
+                }),
+                itemBuilder: (context) => const [
+                  PopupMenuItem(value: 'all', child: Text('All')),
+                  PopupMenuItem(value: 'completed', child: Text('Completed')),
+                  PopupMenuItem(value: 'cancelled', child: Text('Cancelled')),
+                  PopupMenuItem(value: 'expired', child: Text('Expired')),
+                ],
+              ),
+            ],
           ),
           const SizedBox(height: 12),
-          ...history
-              .map((tracking) => _buildTrackingCard(tracking, isHistory: true))
-              .toList(),
+          ...history.map(
+            (tracking) => _buildTrackingCard(tracking, isHistory: true),
+          ),
         ],
       ],
     );
@@ -152,10 +216,7 @@ class _TrackingPageState extends State<TrackingPage> {
   double _calculateProgressValue(String currentStatus) {
     // Now that Ready for Collection is at the top of the list, we need custom progress logic
 
-    // If the current status is Ready for Collection
-    if (currentStatus == TrackingBackend.readyForCollection) {
-      return 1.0;
-    }
+    // Do not mark Ready for Collection as completed automatically
 
     // For other statuses, we need to calculate based on service flow, not list order
     final serviceFlow = [
@@ -169,6 +230,8 @@ class _TrackingPageState extends State<TrackingPage> {
       TrackingBackend.readyForCollection,
     ];
 
+    if (currentStatus.toLowerCase() == 'completed') return 1.0;
+
     final currentIndex = serviceFlow.indexOf(currentStatus);
     if (currentIndex == -1) return 0.0;
 
@@ -180,20 +243,24 @@ class _TrackingPageState extends State<TrackingPage> {
     required bool isHistory,
   }) {
     final dateFormat = DateFormat("MMM dd, yyyy");
+    final isTerminated = _isTerminatedStatus(tracking.currentStatus);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => TrackingDetailPage(tracking: tracking),
-            ),
-          );
-        },
+        onTap: isTerminated
+            ? null
+            : () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        TrackingDetailPage(tracking: tracking),
+                  ),
+                );
+              },
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -205,7 +272,7 @@ class _TrackingPageState extends State<TrackingPage> {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: isHistory
+                      color: (isHistory || isTerminated)
                           ? Colors.grey[200]
                           : TrackingBackend.getStatusColor(
                               tracking.currentStatus,
@@ -214,7 +281,7 @@ class _TrackingPageState extends State<TrackingPage> {
                     ),
                     child: Icon(
                       TrackingBackend.getStatusIcon(tracking.currentStatus),
-                      color: isHistory
+                      color: (isHistory || isTerminated)
                           ? Colors.grey[600]
                           : TrackingBackend.getStatusColor(
                               tracking.currentStatus,
@@ -227,13 +294,75 @@ class _TrackingPageState extends State<TrackingPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          "Booking ${tracking.bookingId}",
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                "Booking ${tracking.bookingId}",
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            _statusBadge(
+                              isHistory: isHistory,
+                              status: tracking.currentStatus,
+                            ),
+                          ],
                         ),
+                        // Show service info when available
+                        if (((tracking.serviceIds ?? const []).isNotEmpty) ||
+                            (tracking.serviceId ?? '').isNotEmpty ||
+                            (tracking.serviceType ?? '').isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              if ((tracking.serviceIds ?? const []).isNotEmpty)
+                                ...List.generate(tracking.serviceIds!.length, (
+                                  i,
+                                ) {
+                                  final id = tracking.serviceIds![i];
+                                  final type =
+                                      (tracking.serviceTypes != null &&
+                                          i < tracking.serviceTypes!.length)
+                                      ? tracking.serviceTypes![i]
+                                      : null;
+                                  return _ServiceChip(id: id, type: type);
+                                })
+                              else
+                                _ServiceChip(
+                                  id: tracking.serviceId,
+                                  type: tracking.serviceType,
+                                ),
+                            ],
+                          ),
+                        ],
+                        if (tracking.plateNumber != null &&
+                            tracking.plateNumber!.trim().isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.directions_car,
+                                size: 14,
+                                color: Colors.grey[700],
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                tracking.plateNumber!,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.grey[700],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                         const SizedBox(height: 4),
                         Text(
                           "Updated: ${dateFormat.format(tracking.updatedAt)}",
@@ -243,39 +372,6 @@ class _TrackingPageState extends State<TrackingPage> {
                           ),
                         ),
                       ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isHistory
-                          ? Colors.grey[100]
-                          : TrackingBackend.getStatusColor(
-                              tracking.currentStatus,
-                            ).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: isHistory
-                            ? Colors.grey[400]!
-                            : TrackingBackend.getStatusColor(
-                                tracking.currentStatus,
-                              ).withOpacity(0.5),
-                      ),
-                    ),
-                    child: Text(
-                      isHistory ? "Completed" : tracking.currentStatus,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: isHistory
-                            ? Colors.grey[700]
-                            : TrackingBackend.getStatusColor(
-                                tracking.currentStatus,
-                              ),
-                      ),
                     ),
                   ),
                 ],
@@ -297,37 +393,112 @@ class _TrackingPageState extends State<TrackingPage> {
               ),
               const SizedBox(height: 12),
               LinearProgressIndicator(
-                value: isHistory
-                    ? 1.0
+                value: isTerminated
+                    ? 0.0
                     : _calculateProgressValue(tracking.currentStatus),
                 backgroundColor: Colors.grey[200],
                 valueColor: AlwaysStoppedAnimation<Color>(
-                  isHistory ? Colors.grey : WmsApp.grabGreen,
+                  isTerminated ? Colors.grey : WmsApp.grabGreen,
                 ),
                 borderRadius: BorderRadius.circular(4),
               ),
               const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Text(
-                    "View Details",
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
+              const SizedBox(height: 4),
+              if (!isTerminated)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Text(
+                      "View Details",
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: WmsApp.grabGreen,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.arrow_forward_ios,
+                      size: 12,
                       color: WmsApp.grabGreen,
                     ),
-                  ),
-                  const SizedBox(width: 4),
-                  Icon(
-                    Icons.arrow_forward_ios,
-                    size: 12,
-                    color: WmsApp.grabGreen,
-                  ),
-                ],
-              ),
+                  ],
+                ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  bool _isTerminatedStatus(String status) {
+    final s = status.toLowerCase();
+    return s == 'cancelled' || s == 'expired';
+  }
+
+  Widget _ServiceChip({String? id, String? type}) {
+    final label = [
+      if ((id ?? '').isNotEmpty) id!,
+      if ((type ?? '').isNotEmpty) type!,
+    ].join(' • ');
+    if (label.isEmpty) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.blueGrey.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.blueGrey.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.miscellaneous_services,
+            size: 12,
+            color: Colors.blueGrey,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.blueGrey,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statusBadge({required bool isHistory, required String status}) {
+    final isTerminated = _isTerminatedStatus(status);
+    final color = isTerminated
+        ? Colors.grey[700]!
+        : TrackingBackend.getStatusColor(status);
+    final bg = isTerminated
+        ? Colors.grey[100]!
+        : TrackingBackend.getStatusColor(status).withOpacity(0.1);
+    final border = isTerminated
+        ? Colors.grey[400]!
+        : TrackingBackend.getStatusColor(status).withOpacity(0.5);
+    return Container(
+      margin: const EdgeInsets.only(left: 8),
+      constraints: const BoxConstraints(maxWidth: 140),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: border),
+      ),
+      child: Text(
+        isTerminated ? status : status,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+          color: color,
         ),
       ),
     );
@@ -361,7 +532,18 @@ class _TrackingDetailPageState extends State<TrackingDetailPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("Booking ${widget.tracking.bookingId}"),
+        title: FutureBuilder<String?>(
+          future: TrackingService.instance.fetchPlateNumberForBooking(
+            widget.tracking.bookingId,
+          ),
+          builder: (context, snap) {
+            final plate = snap.data;
+            final title = (plate != null && plate.trim().isNotEmpty)
+                ? "Booking ${widget.tracking.bookingId} • ${plate.trim()}"
+                : "Booking ${widget.tracking.bookingId}";
+            return Text(title);
+          },
+        ),
         backgroundColor: WmsApp.grabGreen,
         foregroundColor: Colors.white,
       ),
@@ -374,6 +556,7 @@ class _TrackingDetailPageState extends State<TrackingDetailPage> {
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
                   children: [
+                    // Plate is now shown in the AppBar title
                     _buildSimplifiedVerticalTimeline(),
                     // Removed duplicate stage details section
                   ],
@@ -401,10 +584,14 @@ class _TrackingDetailPageState extends State<TrackingDetailPage> {
     ];
 
     final currentStatus = widget.tracking.currentStatus;
-    final currentFlowIndex = serviceFlow.indexOf(currentStatus);
+    final bool markAllComplete = currentStatus.toLowerCase() == 'completed';
+    final currentFlowIndex = markAllComplete
+        ? serviceFlow.length - 1
+        : serviceFlow.indexOf(currentStatus);
 
-    // Special case for Ready for Collection (always show as complete)
-    final isComplete = currentStatus == TrackingBackend.readyForCollection;
+    // Ready for Collection should be shown as current/active, not complete
+    // Completed should mark all stages as complete
+    final isComplete = markAllComplete;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -753,8 +940,8 @@ class _TrackingDetailPageState extends State<TrackingDetailPage> {
     final currentStatus = widget.tracking.currentStatus;
     final currentFlowIndex = serviceFlow.indexOf(currentStatus);
 
-    // Special case for Ready for Collection (always show as complete)
-    final isComplete = currentStatus == TrackingBackend.readyForCollection;
+    // Do not auto-complete Ready for Collection; keep as current/active
+    final isComplete = false;
 
     return Container(
       color: Colors.white,
@@ -780,7 +967,7 @@ class _TrackingDetailPageState extends State<TrackingDetailPage> {
               children: [
                 const SizedBox(width: 16),
                 ...List.generate(serviceFlow.length, (index) {
-                  final isPast = index < currentFlowIndex || isComplete;
+                  final isPast = index < currentFlowIndex && !isComplete;
                   final isCurrent = index == currentFlowIndex && !isComplete;
                   final status = serviceFlow[index];
 

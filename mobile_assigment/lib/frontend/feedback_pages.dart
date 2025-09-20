@@ -30,12 +30,14 @@ class FeedbackListPage extends StatelessWidget {
               ),
             );
           }
-          if (!snap.hasData)
+          if (!snap.hasData) {
             return const Center(child: CircularProgressIndicator());
+          }
 
           final invoices = snap.data!;
-          if (invoices.isEmpty)
+          if (invoices.isEmpty) {
             return const Center(child: Text('No paid bills yet.'));
+          }
 
           return ListView.separated(
             itemCount: invoices.length,

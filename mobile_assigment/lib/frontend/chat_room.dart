@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart' as ll;
 import 'package:flutter/services.dart';
 import '../main.dart';
 import '../backend/tracking.dart';
@@ -32,6 +34,18 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
   final ScrollController _scrollController = ScrollController();
   final ImagePicker _imagePicker = ImagePicker();
   StreamSubscription? _sub;
+
+  // Preset quick replies related to car status and service progress
+  static const List<String> _quickReplies = [
+    "What's the status of my car?",
+    "Has servicing started?",
+    "Any issues found so far?",
+    "When will it be ready?",
+    "Estimated cost update, please",
+    "Any parts pending?",
+    "Can I pick up today?",
+    "Please share progress photos",
+  ];
 
   @override
   void initState() {
@@ -86,7 +100,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
                 leading: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: WmsApp.grabGreen.withOpacity(0.1),
+                    color: WmsApp.grabGreen.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(Icons.camera_alt, color: WmsApp.grabGreen),
@@ -102,7 +116,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
                 leading: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: WmsApp.grabGreen.withOpacity(0.1),
+                    color: WmsApp.grabGreen.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(Icons.photo_library, color: WmsApp.grabGreen),
@@ -187,12 +201,13 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
     });
   }
 
-  // Send current location as a Google Maps link
+  // Send current location as a map preview + link text
   Future<void> _sendCurrentLocation() async {
     try {
       // Ensure device location services are enabled
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Location services are disabled')),
         );
@@ -206,28 +221,22 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
       }
       if (permission == LocationPermission.deniedForever ||
           permission == LocationPermission.denied) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Location permission denied')),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location permission denied')),
+          );
+        }
         return;
       }
 
       // Get current position
-      final pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
+      final pos = await Geolocator.getCurrentPosition();
       final lat = pos.latitude.toStringAsFixed(6);
       final lng = pos.longitude.toStringAsFixed(6);
       final mapsUrl = 'https://www.google.com/maps?q=$lat,$lng';
 
-      // Try to launch maps link locally (optional UX)
-      final uri = Uri.parse(mapsUrl);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
-
-      // Send the link message to chat
-      ChatService.instance.sendMessage(
+      // Send the map link as a simple text message; preview will render in UI
+      await ChatService.instance.sendMessage(
         trackId: widget.trackId,
         text: 'My current location: $mapsUrl',
         displayName: (prof.ProfileBackend.instance.currentUser?.name ?? 'You'),
@@ -235,20 +244,26 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
       );
     } on PlatformException catch (e) {
       if (e.code.toLowerCase().contains('missing')) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Plugin not registered. Fully restart the app.'),
-          ),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Plugin not registered. Fully restart the app.'),
+            ),
+          );
+        }
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to share location: ${e.message}')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to share location: ${e.message}')),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to share location: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to share location: $e')));
+      }
     }
   }
 
@@ -265,6 +280,18 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
       displayName: (prof.ProfileBackend.instance.currentUser?.name ?? 'You'),
       userId: (prof.ProfileBackend.instance.currentUser?.userId ?? ''),
     );
+    _scrollToBottom();
+  }
+
+  // Send a preset quick reply
+  void _sendQuickReply(String text) {
+    ChatService.instance.sendMessage(
+      trackId: widget.trackId,
+      text: text,
+      displayName: (prof.ProfileBackend.instance.currentUser?.name ?? 'You'),
+      userId: (prof.ProfileBackend.instance.currentUser?.userId ?? ''),
+    );
+    _scrollToBottom();
   }
 
   @override
@@ -401,6 +428,9 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
                 ),
               ),
 
+              // Quick reply bar
+              _buildQuickReplyBar(),
+
               // Message input area
               Container(
                 padding: const EdgeInsets.all(12),
@@ -486,11 +516,43 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
     );
   }
 
+  // Quick reply bar with horizontally scrollable chips
+  Widget _buildQuickReplyBar() {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: _quickReplies
+              .map(
+                (q) => Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: _buildQuickReplyChip(q),
+                ),
+              )
+              .toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickReplyChip(String text) {
+    return ActionChip(
+      backgroundColor: WmsApp.grabGreen.withValues(alpha: 0.08),
+      shape: StadiumBorder(
+        side: BorderSide(color: WmsApp.grabGreen.withValues(alpha: 0.3)),
+      ),
+      label: Text(text, style: TextStyle(color: WmsApp.grabDark, fontSize: 12)),
+      onPressed: () => _sendQuickReply(text),
+    );
+  }
+
   Widget _buildMessageBubble(_UiMessage message, Technician? tech) {
     final isFromTechnician = message.isFromTechnician;
     final backgroundColor = isFromTechnician
         ? Colors.grey[200]
-        : WmsApp.grabGreen.withOpacity(0.1);
+        : WmsApp.grabGreen.withValues(alpha: 0.1);
 
     final textColor = isFromTechnician ? Colors.black87 : WmsApp.grabDark;
 
@@ -498,6 +560,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
         ? CrossAxisAlignment.start
         : CrossAxisAlignment.end;
 
+    final maybeMap = _buildMapPreviewIfLocation(message.text);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -550,16 +613,17 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
                 ),
                 child: message.imageUrl != null
                     ? _buildImageMessage(message)
-                    : Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
-                        ),
-                        child: Text(
-                          message.text,
-                          style: TextStyle(fontSize: 14, color: textColor),
-                        ),
-                      ),
+                    : maybeMap ??
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 10,
+                            ),
+                            child: Text(
+                              message.text,
+                              style: TextStyle(fontSize: 14, color: textColor),
+                            ),
+                          ),
               ),
               const SizedBox(height: 4),
               Text(
@@ -575,6 +639,99 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
             ),
         ],
       ),
+    );
+  }
+
+  // Detect and render a small map preview when a message contains a maps link with lat,lng
+  Widget? _buildMapPreviewIfLocation(String text) {
+    final reg = RegExp(
+      r'https?:\/\/www\.google\.com\/maps\?q=([\-\d\.]+),([\-\d\.]+)',
+    );
+    final m = reg.firstMatch(text);
+    if (m == null) return null;
+    final lat = double.tryParse(m.group(1) ?? '');
+    final lng = double.tryParse(m.group(2) ?? '');
+    if (lat == null || lng == null) return null;
+    final center = ll.LatLng(lat, lng);
+    final link = Uri.parse(
+      'https://www.google.com/maps?q=${lat.toStringAsFixed(6)},${lng.toStringAsFixed(6)}',
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          height: 160,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: FlutterMap(
+              options: MapOptions(
+                initialCenter: center,
+                initialZoom: 15,
+                interactionOptions: const InteractionOptions(
+                  flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
+                ),
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate:
+                      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  subdomains: const ['a', 'b', 'c'],
+                  userAgentPackageName: 'com.example.mobile_assigment',
+                ),
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: center,
+                      width: 40,
+                      height: 40,
+                      child: const Icon(
+                        Icons.location_pin,
+                        color: Colors.red,
+                        size: 36,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        TextButton.icon(
+          onPressed: () async {
+            // Prefer geo: scheme to open native map apps; fallback to https
+            final geo = Uri.parse(
+              'geo:${lat.toStringAsFixed(6)},${lng.toStringAsFixed(6)}?q=${lat.toStringAsFixed(6)},${lng.toStringAsFixed(6)}',
+            );
+            bool launched = false;
+            try {
+              if (await canLaunchUrl(geo)) {
+                launched = await launchUrl(
+                  geo,
+                  mode: LaunchMode.externalApplication,
+                );
+              }
+              if (!launched) {
+                launched = await launchUrl(
+                  link,
+                  mode: LaunchMode.externalApplication,
+                );
+              }
+            } catch (_) {
+              launched = false;
+            }
+            if (!launched && mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('No maps app found to open the location'),
+                ),
+              );
+            }
+          },
+          icon: const Icon(Icons.map),
+          label: const Text('Open in Google Maps'),
+        ),
+      ],
     );
   }
 

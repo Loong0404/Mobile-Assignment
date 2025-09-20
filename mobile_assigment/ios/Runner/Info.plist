@@ -45,5 +45,10 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<!-- Location usage descriptions for Geolocator/location features -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>We use your location to share it in chat and show maps.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>We use your location to share it in chat and show maps.</string>
 </dict>
 </plist>

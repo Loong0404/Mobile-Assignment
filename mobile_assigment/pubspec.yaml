@@ -45,6 +45,8 @@ dependencies:
   geolocator: ^13.0.1
   url_launcher: ^6.3.0
   flutter_lints: ^6.0.0
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
 
 dev_dependencies:
   flutter_launcher_icons: ^0.13.1
